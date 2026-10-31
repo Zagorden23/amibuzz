@@ -1,0 +1,24 @@
+{
+  "name": "amibuzz-functions",
+  "description": "AmiBuzz backend — Firebase Cloud Functions (Razorpay + Stripe payments, email-OTP auth). Plain JavaScript, no TypeScript.",
+  "type": "commonjs",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions,firestore,auth",
+    "shell": "firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "@sendgrid/mail": "^8.1.4",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.1",
+    "razorpay": "^2.9.5",
+    "stripe": "^17.4.0"
+  },
+  "private": true
+}

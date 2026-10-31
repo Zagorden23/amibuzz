@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can read their own profile (plan, subscription status, etc.).
+    // All subscription/quota writes go through Cloud Functions (Admin SDK
+    // bypasses rules), but users may update ONLY their own displayName.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+      allow create, delete: if false;
+    }
+
+    // OTP records must never be readable/writable by clients — only the
+    // Admin SDK (Cloud Functions) touches these collections.
+    match /emailOtps/{email} {
+      allow read, write: if false;
+    }
+    match /smsOtps/{phoneNumber} {
+      allow read, write: if false;
+    }
+
+    // Support tickets: signed-in users may file them; only the backend
+    // (Admin SDK) ever reads or updates them.
+    match /supportTickets/{ticketId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if false;
+    }
+
+    // Payment records: readable by the owner for their own receipts,
+    // never writable by clients (Cloud Functions/webhooks write these).
+    match /payments/{paymentId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow write: if false;
+    }
+  }
+}

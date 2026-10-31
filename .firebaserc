@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "amibuzz-prod",
+    "production": "amibuzz-prod",
+    "emulator": "demo-amibuzz"
+  }
+}
