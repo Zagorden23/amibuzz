@@ -1,4 +1,4 @@
-// Elite Anime Art Styles, Preset Inspirations, and Quick Tag Chips for AmiBuzz
+// Elite Anime Art Styles, Preset Inspirations, Color Harmonies, and Manga SFX for AmiBuzz
 
 export const ANIME_STYLES = [
   {
@@ -83,6 +83,100 @@ export const ANIME_STYLES = [
   },
 ];
 
+// Color Harmonies & Mood Locking (Recraft-style)
+export const COLOR_HARMONIES = [
+  {
+    id: 'vibrant',
+    name: 'Vibrant Pop',
+    desc: 'Rich saturated anime palette',
+    colors: ['#ef4444', '#3b82f6', '#eab308'],
+    promptClause: 'saturated vibrant anime colors, punchy contrast, crisp highlights',
+  },
+  {
+    id: 'pastel',
+    name: 'Kawaii Pastel',
+    desc: 'Soft strawberry, mint & lavender',
+    colors: ['#f472b6', '#a7f3d0', '#c084fc'],
+    promptClause: 'soft pastel anime palette, dreamy lavender and strawberry tones, gentle aesthetic',
+  },
+  {
+    id: 'cyber',
+    name: 'Cyber Neon',
+    desc: 'Electric cyan & neon magenta',
+    colors: ['#06b6d4', '#ec4899', '#8b5cf6'],
+    promptClause: 'cyberpunk neon lighting, glowing cyan and electric magenta accents, synthwave aesthetic',
+  },
+  {
+    id: 'sunset',
+    name: 'Sunset Warmth',
+    desc: 'Amber, peach & golden hour',
+    colors: ['#f97316', '#fb7185', '#fbbf24'],
+    promptClause: 'golden hour anime warmth, amber and peach highlights, radiant glow',
+  },
+  {
+    id: 'monochrome',
+    name: 'Manga Noir',
+    desc: 'Deep ink, silver & pure white',
+    colors: ['#1e293b', '#64748b', '#f8fafc'],
+    promptClause: 'monochrome manga ink style, pure black and silver tones, clean graphic contrast',
+  },
+  {
+    id: 'sakura',
+    name: 'Sakura Mist',
+    desc: 'Cherry blossom & soft jade',
+    colors: ['#fbcfe8', '#f43f5e', '#6ee7b7'],
+    promptClause: 'cherry blossom sakura pinks, delicate petals, fresh spring aesthetic',
+  },
+];
+
+// 4-Sticker Character Emotion Matrix Presets (Picsart / Midjourney style)
+export const EMOTION_MATRIX_PRESETS = [
+  {
+    id: 'happy',
+    label: 'Sugoi Happy',
+    icon: '✨',
+    japanese: 'キラキラ',
+    promptModifier: 'radiant happy smiling anime expression, sparkling joyful eyes, blush marks, celebratory aura',
+  },
+  {
+    id: 'tsundere',
+    label: 'Tsundere Pout',
+    icon: '💢',
+    japanese: 'ツンデレ',
+    promptModifier: 'cute tsundere pout expression, arms crossed, flustered blushing cheeks, tiny anime anger mark, feisty look',
+  },
+  {
+    id: 'shock',
+    label: 'Comedic Shock',
+    icon: '💧',
+    japanese: 'ガーン',
+    promptModifier: 'comedic overdramatic anime shock expression, giant blue sweatdrop, wide eyes, funny disbelief',
+  },
+  {
+    id: 'victory',
+    label: 'Victory Peace',
+    icon: '✌️',
+    japanese: 'やったー',
+    promptModifier: 'enthusiastic victory peace sign pose, playful winking eye, confident triumphant anime smile, star sparkles',
+  },
+];
+
+// Manga SFX Onomatopoeia & Badges
+export const MANGA_SFX_STAMPS = [
+  { id: 'sfx_menacing', text: 'ドドド', label: 'Menacing (JoJo)', category: 'sfx' },
+  { id: 'sfx_rumble', text: 'ゴゴゴ', label: 'Ominous Rumble', category: 'sfx' },
+  { id: 'sfx_sparkle', text: 'キラキラ', label: 'Radiant Sparkle', category: 'sfx' },
+  { id: 'sfx_heartbeat', text: 'ドキドキ', label: 'Heart Throb', category: 'sfx' },
+  { id: 'sfx_yay', text: 'わーい！', label: 'Pure Joy', category: 'sfx' },
+  { id: 'sfx_bam', text: 'バーン！', label: 'Dynamic Entrance', category: 'sfx' },
+  { id: 'word_sugoi', text: 'SUGOI!', label: 'Amazing!', category: 'badge' },
+  { id: 'word_nani', text: 'NANI?!', label: 'What?!', category: 'badge' },
+  { id: 'word_baka', text: 'BAKA!', label: 'Idiot!', category: 'badge' },
+  { id: 'word_gambare', text: 'GAMBARE!', label: 'Do Your Best!', category: 'badge' },
+  { id: 'word_senpai', text: 'SENPAI!', label: 'Notice Me!', category: 'badge' },
+  { id: 'word_ggez', text: 'GG EZ', label: 'Gamer Victory', category: 'badge' },
+];
+
 export const INSPIRATION_PROMPTS = [
   'A grumpy Shiba Inu wearing a pink samurai kimono eating strawberry mochi',
   'Chibi kitsune nine-tailed fox priestess summoning glowing blue spirit fireballs',
@@ -94,6 +188,8 @@ export const INSPIRATION_PROMPTS = [
   'Tsundere catgirl maid crossing her arms with a pout and cute anger mark',
   'Neon samurai slicing a digital neon watermelon in half with lightning sword',
   'Cute ghost barista pouring latte art into a mug with floating star sparkles',
+  'Magical girl bunny with angelic wings holding a star wand casting pastel magic',
+  'Retro 90s cyber courier girl riding a hovering delivery scooter with noodles',
 ];
 
 export const QUICK_TAG_CATEGORIES = [
@@ -119,6 +215,7 @@ export const QUICK_TAG_CATEGORIES = [
       'Boba Bear',
       'Dragon Tamer',
       'Astronaut Penguin',
+      'Magical Bunny',
     ],
   },
   {
@@ -131,16 +228,18 @@ export const QUICK_TAG_CATEGORIES = [
       'Cherry Blossoms',
       'Cyber Visor',
       'Boba Tea Cup',
+      'Star Wand',
     ],
   },
   {
-    category: 'Decals & SFX',
+    category: 'Manga SFX',
     tags: [
       'ドドド (Menacing)',
       'ゴゴゴ (Ominous)',
       'キラキラ (Sparkle)',
       'ドキドキ (Heartbeat)',
       'バーン (BAM!)',
+      'わーい (Yay!)',
     ],
   },
 ];

@@ -12,6 +12,7 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
+  CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { isSoundEnabled, toggleSound, playPop } from '../../lib/audio.js';
@@ -35,6 +36,7 @@ export const Sidebar = ({ currentPath, onNavigate }) => {
     { id: 'dashboard', label: 'Dashboard & Packs', icon: Home },
     { id: 'generator', label: 'Sticker Studio', icon: PlusCircle },
     { id: 'giflab', label: 'GIF Animation Lab', icon: ImageIcon },
+    { id: 'pricing', label: 'Pricing & Plans', icon: CreditCard },
   ];
 
   const handleLogout = async () => {

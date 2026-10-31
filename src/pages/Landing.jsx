@@ -192,23 +192,23 @@ export const Landing = ({ onNavigate }) => {
               {[
                 {
                   icon: ImageIcon,
-                  title: 'Image-to-Sticker',
-                  desc: 'Upload selfies, pet photos, or sketches and transform them into cel-shaded anime avatars with die-cut contours.',
+                  title: 'Image-to-Sticker & Vectors',
+                  desc: 'Transform photos or prompts into cel-shaded anime avatars with SVG vector die-cuts and classic white contours.',
                 },
                 {
                   icon: Edit3,
-                  title: 'Prompt & Voice Studio',
-                  desc: 'Type or speak your ideas. Our AI enhancer adds dynamic poses, anime emotions, and Japanese onomatopoeia decals.',
+                  title: '4x Emotion Matrix & Voice',
+                  desc: 'Type or speak your prompt. Generate 4 expression variations (Sugoi Happy, Tsundere Pout, Shock, Victory Peace) at once.',
                 },
                 {
                   icon: Film,
                   title: 'Real Multi-Frame GIFs',
-                  desc: 'Produce real animated .gif and .webp files with Kawaii Bounce, Floating Magic, Rage Shake, and Glitch animations.',
+                  desc: 'Produce real animated .gif and .webp files with Kawaii Bounce, Floating Magic, Rage Shake, and Sakura Drift motion.',
                 },
                 {
                   icon: Sliders,
-                  title: 'Die-Cut Customizer',
-                  desc: 'Add thick white contour borders, anime ribbon captions ("SUGOI!", "NANI?!"), emotion decals, and print sheets.',
+                  title: 'WhatsApp & Telegram Packs',
+                  desc: '1-click export of complete 512x512 transparent sticker pack ZIPs with tray icon and manifest, plus printable A4 sheets.',
                 },
               ].map((feature, i) => (
                 <TiltCard key={i}>

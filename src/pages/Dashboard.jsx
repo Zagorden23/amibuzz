@@ -18,6 +18,10 @@ import {
   Sliders,
   Wand2,
   Sparkles,
+  Palette,
+  Package,
+  FileCode2,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { TiltCard } from '../components/ui/TiltCard.jsx';
@@ -33,6 +37,9 @@ import {
 } from '../services/stickerStorage.js';
 import { StickerSheetModal } from '../components/sticker/StickerSheetModal.jsx';
 import { StickerCustomizerModal } from '../components/sticker/StickerCustomizerModal.jsx';
+import { StickerPlaygroundModal } from '../components/sticker/StickerPlaygroundModal.jsx';
+import { downloadWhatsAppStickerPackZip } from '../lib/zipExporter.js';
+import { downloadStickerSvg } from '../lib/vectorSvgExporter.js';
 import { playPop, playSuccess } from '../lib/audio.js';
 import { fireConfetti } from '../lib/confetti.js';
 
@@ -49,9 +56,14 @@ export const Dashboard = ({ onNavigate }) => {
 
   // Modals state
   const [sheetModalOpen, setSheetModalOpen] = useState(false);
+  const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
   const [customizingSticker, setCustomizingSticker] = useState(null);
   const [newPackName, setNewPackName] = useState('');
   const [showNewPackInput, setShowNewPackInput] = useState(false);
+
+  // Export ZIP State
+  const [isExportingPackZip, setIsExportingPackZip] = useState(false);
+  const [packZipSuccess, setPackZipSuccess] = useState(false);
 
   useEffect(() => {
     setStickers(getStoredStickers());
@@ -92,6 +104,18 @@ export const Dashboard = ({ onNavigate }) => {
     }
   };
 
+  const handleDownloadSvg = (sticker, e) => {
+    e.stopPropagation();
+    playPop();
+    downloadStickerSvg({
+      imgUrl: sticker.img,
+      name: sticker.name,
+      borderType: 'white',
+      borderWidth: 14,
+    });
+    playSuccess();
+  };
+
   const handleCreatePack = (e) => {
     e.preventDefault();
     if (!newPackName.trim()) return;
@@ -103,15 +127,11 @@ export const Dashboard = ({ onNavigate }) => {
   };
 
   const filteredStickers = stickers.filter((s) => {
-    // Pack filter
     if (activePackId !== 'all' && s.packId !== activePackId) return false;
-
-    // Type / Favorite filter
     if (filter === 'animated' && !s.animated) return false;
     if (filter === 'static' && s.animated) return false;
     if (filter === 'favorites' && !s.isFavorite) return false;
 
-    // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const nameMatch = (s.name || '').toLowerCase().includes(q);
@@ -122,6 +142,30 @@ export const Dashboard = ({ onNavigate }) => {
 
     return true;
   });
+
+  const activePackName =
+    activePackId !== 'all'
+      ? packs.find((p) => p.id === activePackId)?.name || 'Anime Pack'
+      : 'All Anime Stickers';
+
+  const handleExportWhatsAppZip = async () => {
+    if (filteredStickers.length === 0 || isExportingPackZip) return;
+    setIsExportingPackZip(true);
+    setPackZipSuccess(false);
+    playPop();
+
+    try {
+      await downloadWhatsAppStickerPackZip(activePackName, filteredStickers);
+      setPackZipSuccess(true);
+      playSuccess();
+      fireConfetti();
+      setTimeout(() => setPackZipSuccess(false), 4000);
+    } catch (err) {
+      console.error('WhatsApp zip export error:', err);
+    } finally {
+      setIsExportingPackZip(false);
+    }
+  };
 
   const usedToday =
     profile?.usageDate === new Date().toISOString().slice(0, 10) ? profile?.usageCount || 0 : 0;
@@ -142,21 +186,48 @@ export const Dashboard = ({ onNavigate }) => {
         <header className="h-20 flex items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#0f0913]/80 backdrop-blur-md sticky top-0 z-30">
           <div className="pl-14 lg:pl-0">
             <h1 className="text-xl lg:text-2xl font-black text-white flex items-center gap-2">
-              Creator Dashboard <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-bold">{stickers.length} Designs</span>
+              Creator Dashboard{' '}
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-bold">
+                {stickers.length} Designs
+              </span>
             </h1>
-            <p className="text-slate-400 text-xs lg:text-sm hidden sm:block">Manage your sticker collections & printable packs</p>
+            <p className="text-slate-400 text-xs lg:text-sm hidden sm:block">
+              Manage your collections, export WhatsApp/Telegram ZIP packs, or arrange in Playground
+            </p>
           </div>
-          <div className="flex items-center gap-2 lg:gap-4 ml-auto">
+          <div className="flex items-center gap-2 lg:gap-3 ml-auto">
             <PlanBadge onNavigate={onNavigate} />
+
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { playPop(); setSheetModalOpen(true); }}
-              className="gap-2 text-xs font-bold"
+              onClick={() => {
+                playPop();
+                setPlaygroundModalOpen(true);
+              }}
+              className="gap-2 text-xs font-bold border-white/15 text-slate-200 hover:text-white"
+              title="Open Interactive Sticker Playground"
             >
-              <Printer size={16} /> <span className="hidden sm:inline">Print Sticker Sheet</span>
+              <Palette size={16} className="text-purple-400" />
+              <span className="hidden sm:inline">Playground</span>
             </Button>
-            <Button onClick={() => onNavigate('generator')} className="gap-2 text-sm px-4 py-2 font-bold shadow-lg">
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                playPop();
+                setSheetModalOpen(true);
+              }}
+              className="gap-2 text-xs font-bold border-white/15 text-slate-200 hover:text-white"
+            >
+              <Printer size={16} /> <span className="hidden sm:inline">Print Sheet</span>
+            </Button>
+
+            <Button
+              onClick={() => onNavigate('generator')}
+              className="gap-2 text-sm px-4 py-2 font-bold shadow-lg"
+            >
               <PlusCircle size={18} /> <span className="hidden sm:inline">Create New</span>
             </Button>
           </div>
@@ -175,17 +246,22 @@ export const Dashboard = ({ onNavigate }) => {
                   transition={{ delay: i * 0.05 }}
                   className="p-5 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between"
                 >
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{stat.label}</p>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    {stat.label}
+                  </p>
                   <p className={`text-2xl lg:text-3xl font-black ${stat.color}`}>{stat.value}</p>
                 </motion.div>
               ))}
             </div>
 
-            {/* Sticker Pack Tabs Bar */}
-            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3 overflow-x-auto custom-scrollbar">
-              <div className="flex items-center gap-2">
+            {/* Sticker Pack Tabs Bar & WhatsApp Export */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
                 <button
-                  onClick={() => { playPop(); setActivePackId('all'); }}
+                  onClick={() => {
+                    playPop();
+                    setActivePackId('all');
+                  }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                     activePackId === 'all'
                       ? 'bg-red-500 text-white shadow-md'
@@ -197,7 +273,10 @@ export const Dashboard = ({ onNavigate }) => {
                 {packs.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => { playPop(); setActivePackId(p.id); }}
+                    onClick={() => {
+                      playPop();
+                      setActivePackId(p.id);
+                    }}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                       activePackId === p.id
                         ? 'bg-red-500 text-white shadow-md'
@@ -207,12 +286,10 @@ export const Dashboard = ({ onNavigate }) => {
                     {p.name}
                   </button>
                 ))}
-              </div>
 
-              {/* Add Pack button */}
-              <div className="flex items-center">
+                {/* Add Pack button */}
                 {showNewPackInput ? (
-                  <form onSubmit={handleCreatePack} className="flex items-center gap-2">
+                  <form onSubmit={handleCreatePack} className="flex items-center gap-2 ml-2">
                     <input
                       type="text"
                       autoFocus
@@ -221,7 +298,9 @@ export const Dashboard = ({ onNavigate }) => {
                       onChange={(e) => setNewPackName(e.target.value)}
                       className="px-3 py-1.5 bg-white/10 border border-white/20 rounded-xl text-xs text-white outline-none"
                     />
-                    <Button size="sm" type="submit" className="text-xs px-2.5 py-1">Save</Button>
+                    <Button size="sm" type="submit" className="text-xs px-2.5 py-1">
+                      Save
+                    </Button>
                     <button
                       type="button"
                       onClick={() => setShowNewPackInput(false)}
@@ -233,18 +312,49 @@ export const Dashboard = ({ onNavigate }) => {
                 ) : (
                   <button
                     onClick={() => setShowNewPackInput(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/10 rounded-xl transition-colors whitespace-nowrap"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/10 rounded-xl transition-colors whitespace-nowrap ml-1"
                   >
                     <FolderPlus size={15} /> New Pack
                   </button>
                 )}
+              </div>
+
+              {/* WhatsApp & Telegram Pack ZIP Exporter */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleExportWhatsAppZip}
+                  disabled={isExportingPackZip || filteredStickers.length === 0}
+                  className="gap-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md"
+                  title="Export WhatsApp & Telegram sticker pack ZIP (512x512 WebP + Tray Icon + Manifest)"
+                >
+                  {isExportingPackZip ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Building Pack ZIP...</span>
+                    </>
+                  ) : packZipSuccess ? (
+                    <>
+                      <Check size={16} className="text-emerald-200" />
+                      <span>ZIP Exported!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Package size={16} />
+                      <span>Export WhatsApp / Telegram Pack (.zip)</span>
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
 
             {/* Search and Type Filters */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1 max-w-md relative group">
-                <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-red-400 transition-colors" />
+                <Search
+                  size={17}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-red-400 transition-colors"
+                />
                 <input
                   type="text"
                   placeholder="Search stickers by name, tag, or anime style..."
@@ -263,11 +373,12 @@ export const Dashboard = ({ onNavigate }) => {
                 ].map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => { playPop(); setFilter(t.id); }}
+                    onClick={() => {
+                      playPop();
+                      setFilter(t.id);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      filter === t.id
-                        ? 'bg-red-500 text-white shadow'
-                        : 'text-slate-400 hover:text-white'
+                      filter === t.id ? 'bg-red-500 text-white shadow' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     {t.label}
@@ -315,41 +426,53 @@ export const Dashboard = ({ onNavigate }) => {
                       </button>
 
                       {/* Hover Action Overlay */}
-                      <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                      <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 backdrop-blur-[2px]">
                         {/* Customize Studio */}
                         <button
-                          onClick={() => { playPop(); setCustomizingSticker(s); }}
-                          className="size-9 bg-white text-slate-900 rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
+                          onClick={() => {
+                            playPop();
+                            setCustomizingSticker(s);
+                          }}
+                          className="size-8 bg-white text-slate-900 rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
                           title="Open Sticker Studio Customizer"
                         >
-                          <Sliders size={16} />
+                          <Sliders size={15} />
                         </button>
 
                         {/* Animate in GIF Lab */}
                         <button
                           onClick={() => onNavigate('giflab', { sticker: s })}
-                          className="size-9 bg-red-500 text-white rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
+                          className="size-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
                           title="Animate in GIF Lab"
                         >
-                          <Wand2 size={16} />
+                          <Wand2 size={15} />
+                        </button>
+
+                        {/* Vector SVG */}
+                        <button
+                          onClick={(e) => handleDownloadSvg(s, e)}
+                          className="size-8 bg-cyan-500/20 text-cyan-300 rounded-full flex items-center justify-center hover:scale-110 hover:bg-cyan-500/40 shadow-lg transition-transform"
+                          title="Download Scalable Vector SVG"
+                        >
+                          <FileCode2 size={15} />
                         </button>
 
                         {/* Copy image */}
                         <button
                           onClick={(e) => handleCopySticker(s, e)}
-                          className="size-9 bg-white/20 text-white rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
+                          className="size-8 bg-white/20 text-white rounded-full flex items-center justify-center hover:scale-110 shadow-lg transition-transform"
                           title="Copy PNG to Clipboard"
                         >
-                          {copiedId === s.id ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+                          {copiedId === s.id ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
                         </button>
 
                         {/* Delete */}
                         <button
                           onClick={(e) => handleDeleteSticker(s.id, e)}
-                          className="size-9 bg-red-500/20 text-red-300 rounded-full flex items-center justify-center hover:scale-110 hover:bg-red-500/40 shadow-lg transition-transform"
+                          className="size-8 bg-red-500/20 text-red-300 rounded-full flex items-center justify-center hover:scale-110 hover:bg-red-500/40 shadow-lg transition-transform"
                           title="Delete Sticker"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
@@ -357,7 +480,7 @@ export const Dashboard = ({ onNavigate }) => {
 
                   <div className="mt-3 flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-xs text-white truncate max-w-[140px]">{s.name}</h3>
+                      <h3 className="font-bold text-xs text-white truncate max-w-[130px]">{s.name}</h3>
                       <span className="text-[10px] text-slate-500">{s.time || 'Saved'}</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -365,7 +488,10 @@ export const Dashboard = ({ onNavigate }) => {
                         {s.stylePreset || 'Anime'}
                       </span>
                       <button
-                        onClick={() => { playPop(); setCustomizingSticker(s); }}
+                        onClick={() => {
+                          playPop();
+                          setCustomizingSticker(s);
+                        }}
                         className="text-[10px] text-slate-400 hover:text-white font-medium hover:underline"
                       >
                         Customize
@@ -382,7 +508,7 @@ export const Dashboard = ({ onNavigate }) => {
                 <div className="relative z-10 text-center md:text-left">
                   <h4 className="text-2xl font-black mb-2">Upgrade to Pro Creator</h4>
                   <p className="text-white/80 text-sm max-w-md">
-                    Unlock 50 daily generations, remove all watermarks, and export HD 1024x1024 printable sheets with commercial usage rights.
+                    Unlock 50 daily generations, export WhatsApp & Telegram sticker packs with zero watermarks, and get scalable SVG die-cut vector rights.
                   </p>
                 </div>
                 <Button
@@ -403,8 +529,15 @@ export const Dashboard = ({ onNavigate }) => {
       <StickerSheetModal
         open={sheetModalOpen}
         stickers={filteredStickers}
-        title={activePackId !== 'all' ? (packs.find((p) => p.id === activePackId)?.name || 'Anime Pack') : 'Anime Sticker Collection'}
+        title={activePackName}
         onClose={() => setSheetModalOpen(false)}
+      />
+
+      {/* Interactive Sticker Board / Playground Modal */}
+      <StickerPlaygroundModal
+        open={playgroundModalOpen}
+        libraryStickers={stickers}
+        onClose={() => setPlaygroundModalOpen(false)}
       />
 
       {/* In-Studio Customizer Modal */}

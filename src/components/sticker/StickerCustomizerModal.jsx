@@ -1,24 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Sliders, Type, Sparkles, Copy, Download, Check, Wand2, Shield, Eye } from 'lucide-react';
+import {
+  X,
+  Sliders,
+  Type,
+  Sparkles,
+  Copy,
+  Download,
+  Check,
+  Wand2,
+  Shield,
+  Eye,
+  FileCode2,
+} from 'lucide-react';
 import { Button } from '../ui/Button.jsx';
 import { playPop, playSuccess } from '../../lib/audio.js';
 import { fireConfetti } from '../../lib/confetti.js';
+import { downloadStickerSvg } from '../../lib/vectorSvgExporter.js';
 
 export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnimate }) => {
   const canvasRef = useRef(null);
 
   // Customizer Controls State
   const [borderEnabled, setBorderEnabled] = useState(true);
-  const [borderWidth, setBorderWidth] = useState(12);
-  const [borderGlow, setBorderGlow] = useState('shadow'); // 'none' | 'shadow' | 'cyan' | 'pink' | 'gold'
+  const [borderWidth, setBorderWidth] = useState(14);
+  const [borderGlow, setBorderGlow] = useState('shadow'); // 'shadow' | 'holo' | 'cyan' | 'pink' | 'gold' | 'dashed'
 
   const [textEnabled, setTextEnabled] = useState(false);
   const [textContent, setTextContent] = useState('SUGOI!');
   const [textPosition, setTextPosition] = useState('bottom'); // 'bottom' | 'top' | 'badge'
   const [textStyle, setTextStyle] = useState('red'); // 'red' | 'cyan' | 'pink' | 'dark'
 
-  const [decal, setDecal] = useState('none'); // 'none' | 'sparkles' | 'anger' | 'sweat' | 'hearts' | 'menacing'
+  const [decal, setDecal] = useState('none'); // 'none' | 'sparkles' | 'anger' | 'sweat' | 'hearts' | 'menacing' | 'rumble'
 
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(105);
@@ -27,7 +40,18 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
   const [copied, setCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  const textPresets = ['SUGOI!', 'BAKA!', 'NANI?!', 'GAMBARE!', 'SENPAI!', 'DOKI DOKI', 'MISSION COMPLETE', 'GG EZ'];
+  const textPresets = [
+    'SUGOI!',
+    'BAKA!',
+    'NANI?!',
+    'GAMBARE!',
+    'SENPAI!',
+    'DOKI DOKI',
+    'ドドド',
+    'ゴゴゴ',
+    'MISSION COMPLETE',
+    'GG EZ',
+  ];
 
   // Redraw canvas whenever settings change
   useEffect(() => {
@@ -87,21 +111,48 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
         ctx.shadowBlur = 18;
         ctx.shadowOffsetY = 10;
       } else if (borderGlow === 'cyan') {
-        ctx.shadowColor = 'rgba(6, 182, 212, 0.8)';
+        ctx.shadowColor = 'rgba(6, 182, 212, 0.85)';
         ctx.shadowBlur = 24;
       } else if (borderGlow === 'pink') {
-        ctx.shadowColor = 'rgba(236, 72, 153, 0.8)';
+        ctx.shadowColor = 'rgba(236, 72, 153, 0.85)';
         ctx.shadowBlur = 24;
       } else if (borderGlow === 'gold') {
-        ctx.shadowColor = 'rgba(234, 179, 8, 0.8)';
+        ctx.shadowColor = 'rgba(234, 179, 8, 0.85)';
         ctx.shadowBlur = 24;
+      } else if (borderGlow === 'holo') {
+        ctx.shadowColor = 'rgba(168, 85, 247, 0.6)';
+        ctx.shadowBlur = 22;
       }
 
-      // Die-cut white contour boundary
-      ctx.fillStyle = '#ffffff';
+      // Contour fill
+      if (borderGlow === 'holo') {
+        // Holographic multi-stop linear gradient
+        const holoGrad = ctx.createLinearGradient(0, 0, size, size);
+        holoGrad.addColorStop(0, '#ff0080');
+        holoGrad.addColorStop(0.25, '#7928ca');
+        holoGrad.addColorStop(0.5, '#0070f3');
+        holoGrad.addColorStop(0.75, '#00dfd8');
+        holoGrad.addColorStop(1, '#ff0080');
+        ctx.fillStyle = holoGrad;
+      } else {
+        ctx.fillStyle = '#ffffff';
+      }
+
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth, 0, Math.PI * 2);
       ctx.fill();
+
+      // Dashed contour line if selected
+      if (borderGlow === 'dashed') {
+        ctx.save();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius + borderWidth + 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     ctx.restore();
 
@@ -131,7 +182,11 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     } else if (decal === 'menacing') {
       drawDecalText(ctx, 'ゴ', cx - radius * 0.75, cy - radius * 0.2, 48, '#a855f7');
       drawDecalText(ctx, 'ゴ', cx - radius * 0.6, cy + radius * 0.3, 40, '#a855f7');
-      drawDecalText(ctx, 'ド', cx + radius * 0.65, cy - radius * 0.3, 44, '#ec4899');
+      drawDecalText(ctx, 'ゴ', cx + radius * 0.65, cy - radius * 0.3, 44, '#ec4899');
+    } else if (decal === 'rumble') {
+      drawDecalText(ctx, 'ド', cx - radius * 0.75, cy - radius * 0.2, 48, '#ef4444');
+      drawDecalText(ctx, 'ド', cx - radius * 0.6, cy + radius * 0.3, 40, '#ef4444');
+      drawDecalText(ctx, 'ド', cx + radius * 0.65, cy - radius * 0.3, 44, '#f59e0b');
     }
     ctx.restore();
 
@@ -156,56 +211,67 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
       };
       const curStyle = styles[textStyle] || styles.red;
 
-      ctx.font = '900 24px "Inter", sans-serif';
+      ctx.font = '900 24px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const textMetrics = ctx.measureText(textContent.toUpperCase());
-      const bannerWidth = Math.min(size - 60, textMetrics.width + 48);
 
-      // Draw Ribbon background with pill curve
+      const metrics = ctx.measureText(textContent);
+      const bannerWidth = Math.max(140, metrics.width + 48);
+
+      // Banner shadow
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 6;
+
+      // Rounded banner rect
       ctx.fillStyle = curStyle.bg;
       ctx.strokeStyle = curStyle.border;
       ctx.lineWidth = 4;
-      ctx.shadowColor = 'rgba(0,0,0,0.5)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 4;
 
       roundRect(ctx, bx - bannerWidth / 2, by - bannerHeight / 2, bannerWidth, bannerHeight, 26);
       ctx.fill();
       ctx.stroke();
 
       // Banner text
-      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
       ctx.fillStyle = curStyle.text;
-      ctx.fillText(textContent.toUpperCase(), bx, by + 1);
+      ctx.fillText(textContent, bx, by);
       ctx.restore();
     }
   };
 
-  const drawDecalText = (ctx, symbol, x, y, size, color = '#ffffff') => {
-    ctx.font = `${size}px sans-serif`;
+  const drawDecalText = (ctx, char, x, y, size, fill = null) => {
+    ctx.save();
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur = 8;
-    ctx.fillStyle = color;
-    ctx.fillText(symbol, x, y);
+    ctx.shadowOffsetY = 4;
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fillText(char, x, y);
+    } else {
+      ctx.fillText(char, x, y);
+    }
+    ctx.restore();
   };
 
-  const roundRect = (ctx, x, y, width, height, radius) => {
+  const roundRect = (ctx, x, y, w, h, r) => {
     ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
   };
 
+  // Copy PNG to Clipboard
   const handleCopyClipboard = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -215,56 +281,65 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
         setCopied(true);
         playSuccess();
-        fireConfetti();
-        setTimeout(() => setCopied(false), 2500);
+        setTimeout(() => setCopied(false), 2000);
       }
     } catch (err) {
-      console.warn('Clipboard write failed:', err);
+      console.warn('Clipboard copy fallback:', err);
     }
   };
 
-  const handleDownload = () => {
+  // Download Transparent PNG
+  const handleDownloadPng = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setIsExporting(true);
-    try {
-      const url = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = url;
-      const safeName = (sticker.name || 'anime-sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      link.download = `${safeName}-diecut.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      playSuccess();
-      fireConfetti();
-    } finally {
-      setIsExporting(false);
-    }
+    playPop();
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    const safeName = (sticker?.name || 'custom-sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    link.download = `${safeName}-diecut.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    playSuccess();
   };
 
+  // Download Scalable Vector SVG (Recraft style)
+  const handleDownloadSvg = () => {
+    playPop();
+    downloadStickerSvg({
+      imgUrl: sticker?.img,
+      name: sticker?.name,
+      borderType: borderGlow === 'holo' ? 'holo' : borderGlow === 'cyan' ? 'neon' : borderGlow === 'dashed' ? 'dashed' : 'white',
+      borderWidth,
+      caption: textEnabled ? textContent : '',
+    });
+    playSuccess();
+  };
+
+  // Save to user storage
   const handleSaveToLibrary = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const customizedImg = canvas.toDataURL('image/png');
-    onSave?.({
+    playPop();
+    const updatedImg = canvas.toDataURL('image/png');
+    const updatedSticker = {
       ...sticker,
-      img: customizedImg,
+      img: updatedImg,
       customized: true,
-      borderSettings: { borderEnabled, borderWidth, borderGlow },
-      textBanner: textEnabled ? { textContent, textPosition, textStyle } : null,
-    });
+      lastModified: Date.now(),
+    };
+    onSave?.(updatedSticker);
     playSuccess();
+    fireConfetti();
     onClose();
   };
 
   const handleGoToGifLab = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const customizedImg = canvas.toDataURL('image/png');
+    const currentImg = canvas ? canvas.toDataURL('image/png') : sticker.img;
     onAnimate?.({
       ...sticker,
-      img: customizedImg,
+      img: currentImg,
     });
     onClose();
   };
@@ -277,31 +352,33 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6"
-        onClick={onClose}
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-4xl bg-[#130b1b] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[92vh]"
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          className="relative w-full max-w-5xl h-[92vh] max-h-[860px] bg-[#140e1b] border border-white/10 rounded-3xl shadow-2xl flex flex-col lg:flex-row overflow-hidden text-slate-100"
         >
-          {/* Left Canvas Preview */}
-          <div className="flex-1 bg-[#09050d] p-6 flex flex-col items-center justify-center relative border-b md:border-b-0 md:border-r border-white/10">
-            <button
-              onClick={onClose}
-              className="md:hidden absolute top-4 right-4 p-2 rounded-xl bg-white/10 text-white"
-            >
-              <X size={18} />
-            </button>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 z-20 size-9 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X size={18} />
+          </button>
 
-            {/* Checkerboard transparency container */}
-            <div className="relative w-full max-w-[340px] aspect-square rounded-2xl border border-white/15 overflow-hidden shadow-2xl flex items-center justify-center bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMUlEQVQ4T2NkYNgfQEhD/o+OQZIMxG4c1EAaGEY1gDAg0xQ+OqMawDAg0xQ+OqMaQBgA+zQ+O2/1h6gAAAAASUVORK5CYII=')]">
-              <canvas ref={canvasRef} className="w-full h-full object-contain drop-shadow-2xl" />
+          {/* Left Canvas Preview Stage */}
+          <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#0a060d] relative overflow-hidden">
+            <div className="relative w-full max-w-[420px] aspect-square rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex items-center justify-center bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMUlEQVQ4T2NkYNgfQEhD/o+OQZIMxG4c1EAaGEY1gDAg0xQ+OqMawDAg0xQ+OqMaQBgA+zQ+O2/1h6gAAAAASUVORK5CYII=')]">
+              <canvas
+                ref={canvasRef}
+                className="w-full h-full object-contain drop-shadow-2xl transition-all duration-200"
+              />
             </div>
 
-            <div className="flex items-center gap-3 mt-6">
+            {/* Quick Action Pills Under Canvas */}
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
               <Button
                 variant="outline"
                 size="sm"
@@ -309,106 +386,130 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                 className="gap-2 text-xs font-bold"
               >
                 {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-                <span>{copied ? 'Copied PNG!' : 'Copy to Clipboard'}</span>
+                {copied ? 'Copied PNG!' : 'Copy PNG'}
               </Button>
+
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleDownload}
+                onClick={handleDownloadSvg}
+                className="gap-2 text-xs font-bold text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
+                title="Download Scalable Vector SVG (Recraft Style)"
+              >
+                <FileCode2 size={16} /> Vector SVG
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={handleDownloadPng}
                 className="gap-2 text-xs font-bold"
               >
-                <Download size={16} /> Download
+                <Download size={16} /> Download PNG
               </Button>
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">Exports with 100% transparent background & die-cut contour</p>
           </div>
 
-          {/* Right Controls Panel */}
-          <div className="w-full md:w-[420px] p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6 bg-[#130b1b]">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <Sliders size={20} className="text-red-400" />
-                <h3 className="font-black text-lg text-white">Sticker Studio Customizer</h3>
-              </div>
-              <button
-                onClick={onClose}
-                className="hidden md:flex p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
-              >
-                <X size={20} />
-              </button>
+          {/* Right Customizer Studio Controls */}
+          <div className="w-full lg:w-[420px] border-l border-white/10 p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar bg-[#140e1b]">
+            <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+              <Sliders size={20} className="text-red-400" />
+              <h3 className="text-base font-black text-white">Sticker Studio Customizer</h3>
             </div>
 
-            {/* 1. Die-Cut Border Settings */}
+            {/* 1. Die-Cut Contour Border */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Shield size={14} className="text-red-400" /> White Die-Cut Border
+                  <Shield size={14} className="text-red-400" /> Die-Cut Contour Border
                 </label>
                 <button
-                  onClick={() => { playPop(); setBorderEnabled(!borderEnabled); }}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-md transition-colors ${borderEnabled ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-slate-400'}`}
+                  onClick={() => {
+                    playPop();
+                    setBorderEnabled(!borderEnabled);
+                  }}
+                  className={`text-[11px] font-black px-2.5 py-0.5 rounded-full transition-colors ${
+                    borderEnabled ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-slate-500'
+                  }`}
                 >
-                  {borderEnabled ? 'ON' : 'OFF'}
+                  {borderEnabled ? 'ACTIVE' : 'OFF'}
                 </button>
               </div>
 
               {borderEnabled && (
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                   <div className="flex justify-between text-xs text-slate-400">
-                    <span>Border Thickness</span>
+                    <span>Contour Thickness</span>
                     <span className="text-white font-bold">{borderWidth}px</span>
                   </div>
                   <input
                     type="range"
                     min="4"
-                    max="24"
+                    max="30"
                     value={borderWidth}
                     onChange={(e) => setBorderWidth(Number(e.target.value))}
                     className="w-full accent-red-500 cursor-pointer"
                   />
 
-                  <div className="flex gap-1.5 pt-1">
-                    {[
-                      { id: 'shadow', label: 'Shadow' },
-                      { id: 'cyan', label: 'Neon Cyan' },
-                      { id: 'pink', label: 'Pink Glow' },
-                      { id: 'gold', label: 'Gold Glow' },
-                    ].map((g) => (
-                      <button
-                        key={g.id}
-                        onClick={() => { playPop(); setBorderGlow(g.id); }}
-                        className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition-colors ${borderGlow === g.id ? 'bg-red-500 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                      >
-                        {g.label}
-                      </button>
-                    ))}
+                  {/* Border Style Presets */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Contour Finish</span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { id: 'shadow', label: 'Classic White' },
+                        { id: 'holo', label: 'Holo Rainbow' },
+                        { id: 'cyan', label: 'Cyber Neon' },
+                        { id: 'pink', label: 'Kawaii Pink' },
+                        { id: 'gold', label: 'Gold Aura' },
+                        { id: 'dashed', label: 'Dashed Cut' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.id}
+                          onClick={() => {
+                            playPop();
+                            setBorderGlow(preset.id);
+                          }}
+                          className={`text-[10px] font-bold py-1.5 rounded-lg border transition-all ${
+                            borderGlow === preset.id
+                              ? 'bg-red-500/20 border-red-500 text-white'
+                              : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* 2. Text Caption / Anime Ribbon */}
+            {/* 2. Text Banner Ribbon */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Type size={14} className="text-yellow-400" /> Anime Text Ribbon
+                  <Type size={14} className="text-yellow-400" /> Anime Speech Ribbon
                 </label>
                 <button
-                  onClick={() => { playPop(); setTextEnabled(!textEnabled); }}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-md transition-colors ${textEnabled ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/10 text-slate-400'}`}
+                  onClick={() => {
+                    playPop();
+                    setTextEnabled(!textEnabled);
+                  }}
+                  className={`text-[11px] font-black px-2.5 py-0.5 rounded-full transition-colors ${
+                    textEnabled ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'bg-white/5 text-slate-500'
+                  }`}
                 >
                   {textEnabled ? 'ON' : 'OFF'}
                 </button>
               </div>
 
               {textEnabled && (
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
                   <input
                     type="text"
                     value={textContent}
                     onChange={(e) => setTextContent(e.target.value)}
                     placeholder="Enter sticker caption..."
-                    className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-sm text-white font-black tracking-wide outline-none focus:border-yellow-500/50"
+                    className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-sm text-white font-black tracking-wide outline-none focus:border-red-500/50"
                   />
 
                   {/* Preset chips */}
@@ -416,8 +517,11 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                     {textPresets.map((preset) => (
                       <button
                         key={preset}
-                        onClick={() => { playPop(); setTextContent(preset); }}
-                        className="text-[10px] font-black px-2 py-0.5 rounded bg-white/5 hover:bg-white/15 text-slate-300"
+                        onClick={() => {
+                          playPop();
+                          setTextContent(preset);
+                        }}
+                        className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white"
                       >
                         {preset}
                       </button>
@@ -428,7 +532,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                     <select
                       value={textPosition}
                       onChange={(e) => setTextPosition(e.target.value)}
-                      className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
+                      className="bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white outline-none"
                     >
                       <option value="bottom">Bottom Ribbon</option>
                       <option value="top">Top Banner</option>
@@ -438,7 +542,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                     <select
                       value={textStyle}
                       onChange={(e) => setTextStyle(e.target.value)}
-                      className="bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white"
+                      className="bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white outline-none"
                     >
                       <option value="red">Manga Red</option>
                       <option value="cyan">Cyber Cyan</option>
@@ -453,7 +557,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
             {/* 3. Anime Decal Overlays */}
             <div className="space-y-3">
               <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={14} className="text-purple-400" /> Expression Decals
+                <Sparkles size={14} className="text-purple-400" /> Expression Decals & Manga SFX
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
@@ -463,11 +567,19 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                   { id: 'sweat', label: '💧 Sweatdrop' },
                   { id: 'hearts', label: '💖 Doki Doki' },
                   { id: 'menacing', label: 'ゴ Menacing' },
+                  { id: 'rumble', label: 'ド Rumble' },
                 ].map((d) => (
                   <button
                     key={d.id}
-                    onClick={() => { playPop(); setDecal(d.id); }}
-                    className={`py-2 px-2 text-xs font-bold rounded-xl transition-all ${decal === d.id ? 'bg-purple-600/30 border border-purple-500 text-purple-200' : 'bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10'}`}
+                    onClick={() => {
+                      playPop();
+                      setDecal(d.id);
+                    }}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition-all ${
+                      decal === d.id
+                        ? 'bg-purple-600/30 border border-purple-500 text-purple-200 shadow-md'
+                        : 'bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10'
+                    }`}
                   >
                     {d.label}
                   </button>
@@ -480,7 +592,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
               <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Eye size={14} className="text-green-400" /> Anime Vibrance & Contrast
               </label>
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
+              <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
                 <div className="flex justify-between text-xs text-slate-400">
                   <span>Vibrance / Saturation</span>
                   <span className="text-white font-bold">{saturation}%</span>

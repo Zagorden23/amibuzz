@@ -356,7 +356,15 @@ export const GifLab = ({ onNavigate, pageState }) => {
               ) : (
                 <>
                   <Download size={18} />
-                  <span>Export Animated GIF</span>
+                  <span>
+                    {exportFormat === 'whatsapp'
+                      ? 'Export WhatsApp Sticker'
+                      : exportFormat === 'discord'
+                      ? 'Export Discord Emote'
+                      : exportFormat === 'webp'
+                      ? 'Export Animated WebP'
+                      : 'Export Animated GIF'}
+                  </span>
                 </>
               )}
             </Button>

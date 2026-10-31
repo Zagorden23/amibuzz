@@ -19,17 +19,32 @@ import {
   Trash2,
   X,
   Upload,
+  Palette,
+  FileCode2,
+  Layers,
+  Flame,
+  ChevronRight,
+  Maximize2,
+  Eye,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { TiltCard } from '../components/ui/TiltCard.jsx';
 import { PlanBadge } from '../components/ui/PlanBadge.jsx';
-import { generateImage, enhancePrompt } from '../services/geminiService.js';
+import { generateImage, generateStickerBatch, enhancePrompt } from '../services/geminiService.js';
 import { getUsage } from '../services/usageService.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { planFor } from '../lib/plans.js';
-import { ANIME_STYLES, INSPIRATION_PROMPTS, QUICK_TAG_CATEGORIES } from '../lib/animeStyles.js';
+import {
+  ANIME_STYLES,
+  INSPIRATION_PROMPTS,
+  QUICK_TAG_CATEGORIES,
+  COLOR_HARMONIES,
+  EMOTION_MATRIX_PRESETS,
+} from '../lib/animeStyles.js';
 import { getStoredStickers, saveStickerToStorage } from '../services/stickerStorage.js';
 import { StickerCustomizerModal } from '../components/sticker/StickerCustomizerModal.jsx';
+import { StickerPlaygroundModal } from '../components/sticker/StickerPlaygroundModal.jsx';
+import { downloadStickerSvg } from '../lib/vectorSvgExporter.js';
 import { playPop, playSparkle, playSuccess } from '../lib/audio.js';
 import { fireConfetti } from '../lib/confetti.js';
 import { createSpeechListener, isSpeechRecognitionSupported } from '../lib/speechRecognition.js';
@@ -46,6 +61,15 @@ export const Generator = ({ onNavigate, pageState }) => {
   const [prompt, setPrompt] = useState(pageState?.remixPrompt || '');
   const [error, setError] = useState('');
 
+  // Generation Modes: 'single' | 'duo' | 'quad_emotion'
+  const [generationMode, setGenerationMode] = useState('single');
+
+  // Color Harmony Mood Locking (Recraft-style)
+  const [colorHarmony, setColorHarmony] = useState('vibrant');
+
+  // Control Deck Section Tab: 'prompt' | 'styles' | 'tags'
+  const [controlTab, setControlTab] = useState('prompt');
+
   // Image-to-Sticker Reference
   const [referenceImage, setReferenceImage] = useState(null);
   const fileInputRef = useRef(null);
@@ -57,17 +81,26 @@ export const Generator = ({ onNavigate, pageState }) => {
   // Active Category Tag Tab
   const [activeTagTab, setActiveTagTab] = useState(0);
 
-  // Sticker Customizer Modal
+  // Modals
   const [customizingSticker, setCustomizingSticker] = useState(null);
+  const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
 
-  // Drafts & Usage
+  // Drafts & Hero Stage Selection
   const [drafts, setDrafts] = useState([]);
+  const [activeHeroSticker, setActiveHeroSticker] = useState(null);
+  const [latestBatch, setLatestBatch] = useState([]);
+  const [stageBackdrop, setStageBackdrop] = useState('checker'); // 'checker' | 'dark' | 'neon' | 'light'
+
+  // Real Usage Quota
   const [usage, setUsage] = useState(null);
 
   // Initialize drafts from storage
   useEffect(() => {
     const stored = getStoredStickers();
     setDrafts(stored);
+    if (stored.length > 0 && !activeHeroSticker) {
+      setActiveHeroSticker(stored[0]);
+    }
   }, []);
 
   // Fetch real quota
@@ -81,7 +114,7 @@ export const Generator = ({ onNavigate, pageState }) => {
     };
   }, [profile?.plan]);
 
-  // Voice Dictation setup
+  // Voice Dictation cleanup
   useEffect(() => {
     return () => {
       if (speechListenerRef.current) {
@@ -166,29 +199,38 @@ export const Generator = ({ onNavigate, pageState }) => {
 
     try {
       const selectedStyle = ANIME_STYLES[activePresetIndex]?.name || 'Kawaii Chibi';
-      const result = await generateImage(prompt, selectedStyle, referenceImage);
 
-      setUsage({
-        plan: result.plan,
-        quota: result.quota,
-        used: result.used,
-        remaining: result.remaining,
+      const isQuadEmotion = generationMode === 'quad_emotion';
+      const variantCount = generationMode === 'duo' ? 2 : isQuadEmotion ? 4 : 1;
+
+      const results = await generateStickerBatch({
+        prompt,
+        stylePreset: selectedStyle,
+        referenceImage,
+        variantCount,
+        emotionMatrix: isQuadEmotion,
+        colorHarmony,
       });
 
-      const newSticker = {
-        id: `gen-${Date.now()}`,
-        name: prompt ? prompt.split(' ').slice(0, 4).join(' ') : 'Anime Sticker',
-        prompt: prompt || 'Image reference sticker',
-        stylePreset: selectedStyle,
-        time: 'Just now',
-        status: 'Saved',
-        img: result.imageUrl,
-        animated: false,
-        createdAt: Date.now(),
-      };
+      if (results && results.length > 0) {
+        let updatedList = drafts;
+        for (const st of results) {
+          updatedList = saveStickerToStorage(st, user);
+        }
+        setDrafts(updatedList);
+        setLatestBatch(results);
+        setActiveHeroSticker(results[0]);
 
-      const updated = saveStickerToStorage(newSticker, user);
-      setDrafts(updated);
+        // Update quota usage
+        if (results[0]?.used !== undefined) {
+          setUsage({
+            plan: results[0].plan,
+            quota: results[0].quota,
+            used: results[0].used,
+            remaining: results[0].remaining,
+          });
+        }
+      }
 
       playSuccess();
       fireConfetti();
@@ -207,7 +249,8 @@ export const Generator = ({ onNavigate, pageState }) => {
     setIsEnhancing(true);
     playSparkle();
     try {
-      const enhanced = await enhancePrompt(prompt);
+      const selectedStyle = ANIME_STYLES[activePresetIndex]?.name || 'Kawaii Chibi';
+      const enhanced = await enhancePrompt(prompt, selectedStyle, colorHarmony);
       setPrompt(enhanced);
     } catch (err) {
       setError(err?.message || 'Could not enhance prompt.');
@@ -216,35 +259,33 @@ export const Generator = ({ onNavigate, pageState }) => {
     }
   };
 
-  const handleCopySticker = async (draft, e) => {
-    e.stopPropagation();
+  const handleCopySticker = async (stickerItem, e) => {
+    if (e) e.stopPropagation();
     try {
-      // Fetch as blob
-      const res = await fetch(draft.img);
+      const res = await fetch(stickerItem.img);
       const blob = await res.blob();
       if (navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
-        setCopiedId(draft.id);
+        setCopiedId(stickerItem.id);
         playSuccess();
         setTimeout(() => setCopiedId(null), 2000);
       }
     } catch {
-      // Fallback: copy url to clipboard
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(draft.img);
-        setCopiedId(draft.id);
+        navigator.clipboard.writeText(stickerItem.img);
+        setCopiedId(stickerItem.id);
         setTimeout(() => setCopiedId(null), 2000);
       }
     }
   };
 
-  const handleDownload = (draft, e) => {
-    e.stopPropagation();
-    setDownloadingId(draft.id);
+  const handleDownload = (stickerItem, e) => {
+    if (e) e.stopPropagation();
+    setDownloadingId(stickerItem.id);
     try {
       const link = document.createElement('a');
-      link.href = draft.img;
-      const safeName = (draft.name || 'sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      link.href = stickerItem.img;
+      const safeName = (stickerItem.name || 'sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
       link.download = `${safeName || 'anime-sticker'}.png`;
       link.target = '_blank';
       document.body.appendChild(link);
@@ -257,35 +298,72 @@ export const Generator = ({ onNavigate, pageState }) => {
     setTimeout(() => setDownloadingId(null), 2000);
   };
 
+  const handleDownloadSvgHero = (stickerItem) => {
+    playPop();
+    downloadStickerSvg({
+      imgUrl: stickerItem.img,
+      name: stickerItem.name,
+      borderType: 'white',
+      borderWidth: 14,
+    });
+    playSuccess();
+  };
+
   return (
     <div className="flex h-screen bg-[#0f0913] text-slate-100 overflow-hidden">
       <Sidebar currentPath="generator" onNavigate={onNavigate} />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
+        {/* Studio Top Navbar */}
         <header className="h-20 flex items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#0f0913]/80 backdrop-blur-md sticky top-0 z-30">
           <div className="pl-14 lg:pl-0">
             <h1 className="text-xl lg:text-2xl font-black text-white flex items-center gap-2">
-              Anime Sticker Studio <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-bold border border-red-500/30">v2.5 AI</span>
+              Anime Sticker Studio{' '}
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 font-bold border border-red-500/30">
+                v2.6 Pro
+              </span>
             </h1>
-            <p className="text-slate-400 text-xs lg:text-sm hidden sm:block">Generate, customize & animate elite anime stickers</p>
+            <p className="text-slate-400 text-xs lg:text-sm hidden sm:block">
+              Multi-variant generation, color mood locking & vector die-cuts
+            </p>
           </div>
-          <div className="flex items-center gap-2 lg:gap-4 ml-auto">
+          <div className="flex items-center gap-2 lg:gap-3 ml-auto">
             <PlanBadge onNavigate={onNavigate} />
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                playPop();
+                setPlaygroundModalOpen(true);
+              }}
+              className="gap-2 text-xs font-bold border-white/15 text-slate-200 hover:text-white"
+              title="Open Interactive Sticker Playground"
+            >
+              <Palette size={16} className="text-purple-400" />
+              <span className="hidden sm:inline">Playground</span>
+            </Button>
+
             <Button
               className="gap-2 text-sm px-3 py-2 lg:px-4 lg:py-2"
-              onClick={() => onNavigate('giflab', drafts[0] ? { sticker: drafts[0] } : {})}
+              onClick={() =>
+                onNavigate(
+                  'giflab',
+                  activeHeroSticker ? { sticker: activeHeroSticker } : drafts[0] ? { sticker: drafts[0] } : {}
+                )
+              }
             >
               <Wand2 size={18} /> <span className="hidden sm:inline">Animate in GIF Lab</span>
             </Button>
           </div>
         </header>
 
+        {/* Master Studio Workspace (Clean 2-Column Split) */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden max-w-[1920px] mx-auto w-full">
-          {/* Left Controls Studio */}
-          <aside className="w-full lg:w-[480px] border-r border-white/10 p-4 lg:p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar bg-[#0f0913]/60">
-            {/* Quota meter */}
-            <div className="flex flex-col gap-2 p-4 rounded-2xl bg-white/5 border border-white/10">
+          {/* Left: Creative Control Deck */}
+          <aside className="w-full lg:w-[460px] xl:w-[480px] border-r border-white/10 p-4 lg:p-6 flex flex-col gap-5 overflow-y-auto custom-scrollbar bg-[#0f0913]/70">
+            {/* Daily Quota Meter */}
+            <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-white/5 border border-white/10">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Zap size={14} className="text-yellow-400" /> Daily Generations
@@ -297,205 +375,499 @@ export const Generator = ({ onNavigate, pageState }) => {
               <div className="h-2 rounded-full bg-black/40 overflow-hidden">
                 <div
                   className="h-full rgb-gradient transition-all duration-500"
-                  style={{ width: usage ? `${Math.min(100, (usage.used / usage.quota) * 100)}%` : '20%' }}
+                  style={{
+                    width: usage ? `${Math.min(100, (usage.used / usage.quota) * 100)}%` : '20%',
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-500">
                 <span>{plan.label} tier</span>
-                <button onClick={() => onNavigate('pricing')} className="text-red-400 font-bold hover:underline">
+                <button
+                  onClick={() => onNavigate('pricing')}
+                  className="text-red-400 font-bold hover:underline cursor-pointer"
+                >
                   Upgrade Quota
                 </button>
               </div>
             </div>
 
-            {/* Prompt Description & Tools */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-slate-300">Prompt Description</label>
-                <button
-                  onClick={handleInspireMe}
-                  className="flex items-center gap-1 text-xs text-yellow-400 font-bold hover:underline cursor-pointer"
-                  title="Randomize Anime Idea"
-                >
-                  <Shuffle size={13} /> Inspire Me
-                </button>
-              </div>
-
-              <div className="relative flex flex-col bg-white/5 border border-white/10 rounded-2xl overflow-hidden focus-within:border-red-500/50 focus-within:ring-1 focus-within:ring-red-500/50 transition-all">
-                {/* Reference Image Thumbnail Preview if uploaded */}
-                {referenceImage && (
-                  <div className="p-3 bg-red-500/10 border-b border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <img src={referenceImage} alt="Ref" className="size-10 rounded-lg object-cover border border-white/20" />
-                      <div>
-                        <p className="text-xs font-bold text-white">Image-to-Sticker Reference</p>
-                        <p className="text-[10px] text-slate-400">AI transforms this into your anime style</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleClearReferenceImage}
-                      className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                )}
-
-                <textarea
-                  className="w-full p-4 bg-transparent border-none focus:ring-0 text-white placeholder:text-slate-500 resize-none min-h-[120px] text-sm outline-none"
-                  placeholder="Describe your anime sticker... (e.g. 'Chibi cat samurai eating ramen with chopsticks, pastel colors, white border')"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                ></textarea>
-
-                {/* Bottom Prompt Toolbar */}
-                <div className="flex items-center justify-between p-2.5 border-t border-white/10 bg-black/25">
-                  <div className="flex items-center gap-1">
-                    {/* Magic AI Enhance */}
-                    <button
-                      onClick={handleEnhancePrompt}
-                      disabled={isEnhancing || !prompt.trim()}
-                      className={`p-2 rounded-xl transition-all flex items-center gap-1.5 ${
-                        isEnhancing ? 'text-red-400 animate-pulse bg-red-500/10' : 'text-slate-400 hover:bg-white/10 hover:text-white'
-                      }`}
-                      title="AI Magic Enhance"
-                    >
-                      <Sparkles size={17} />
-                      <span className="text-xs font-bold hidden sm:inline">Enhance</span>
-                    </button>
-
-                    {/* Image-to-Sticker Upload */}
-                    <div className="relative">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                        onChange={handleImageUpload}
-                        title="Upload reference photo for Image-to-Sticker"
-                      />
-                      <button
-                        className={`p-2 rounded-xl transition-colors ${
-                          referenceImage ? 'bg-red-500/20 text-red-400' : 'text-slate-400 hover:bg-white/10 hover:text-white'
-                        }`}
-                        title="Upload Reference Photo (Image-to-Sticker)"
-                      >
-                        <Upload size={17} />
-                      </button>
-                    </div>
-
-                    {/* Voice Dictation (Web Speech API) */}
-                    <button
-                      onClick={handleToggleVoice}
-                      className={`p-2 rounded-xl transition-all ${
-                        isListening
-                          ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
-                          : 'text-slate-400 hover:bg-white/10 hover:text-white'
-                      }`}
-                      title={isListening ? 'Listening... click to stop' : 'Voice Dictate Prompt'}
-                    >
-                      {isListening ? <MicOff size={17} /> : <Mic size={17} />}
-                    </button>
-                  </div>
-
-                  <Button
-                    size="sm"
-                    className="gap-2 px-5 font-bold shadow-lg"
-                    onClick={handleGenerate}
-                    disabled={isGenerating || (!prompt.trim() && !referenceImage)}
-                  >
-                    {isGenerating ? 'Synthesizing...' : 'Generate'} <Zap size={16} fill="currentColor" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Error Banner */}
-              {error && (
-                <div className="flex items-start gap-2 text-xs rounded-xl p-3 border bg-red-500/10 border-red-500/20 text-red-300">
-                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Anime Tag Chips */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quick Anime Tags</span>
-                <div className="flex gap-1">
-                  {QUICK_TAG_CATEGORIES.map((cat, idx) => (
-                    <button
-                      key={cat.category}
-                      onClick={() => { playPop(); setActiveTagTab(idx); }}
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors ${
-                        activeTagTab === idx ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      {cat.category}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-white/5 border border-white/10 max-h-[110px] overflow-y-auto custom-scrollbar">
-                {QUICK_TAG_CATEGORIES[activeTagTab].tags.map((tag) => (
+            {/* Generation Mode Selector (Single / Duo / Quad Emotion Matrix) */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Generation Mode
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/5 rounded-xl border border-white/10">
+                {[
+                  { id: 'single', label: 'Single', sub: '1 Sticker' },
+                  { id: 'duo', label: 'Duo Variants', sub: '2 Angles' },
+                  { id: 'quad_emotion', label: '4x Emotion Matrix', sub: 'Expressions' },
+                ].map((mode) => (
                   <button
-                    key={tag}
-                    onClick={() => handleAddTag(tag)}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-black/40 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 transition-all active:scale-95 cursor-pointer"
+                    key={mode.id}
+                    onClick={() => {
+                      playPop();
+                      setGenerationMode(mode.id);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-center transition-all ${
+                      generationMode === mode.id
+                        ? 'bg-red-500 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
                   >
-                    + {tag}
+                    <p className="text-xs font-black">{mode.label}</p>
+                    <p className="text-[9px] opacity-75">{mode.sub}</p>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 8 Curated Anime Style Presets */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Anime Art Style</h3>
-                <span className="text-[11px] font-bold text-red-400">
-                  {ANIME_STYLES[activePresetIndex]?.japanese}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
-                {ANIME_STYLES.map((style, idx) => {
-                  const isSelected = activePresetIndex === idx;
-                  return (
-                    <div
-                      key={style.id}
-                      onClick={() => { playPop(); setActivePresetIndex(idx); }}
-                      className={`group relative cursor-pointer overflow-hidden rounded-2xl border-2 transition-all p-1 bg-white/5 ${
-                        isSelected
-                          ? 'border-red-500 ring-4 ring-red-500/20 shadow-xl'
-                          : 'border-transparent hover:border-white/20'
-                      }`}
-                    >
-                      <div
-                        className="aspect-[4/3] rounded-xl bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                        style={{ backgroundImage: `url('${style.img}')` }}
-                      >
-                        <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full text-white border border-white/10">
-                          {style.badge}
-                        </div>
-                      </div>
-                      <div className="p-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-white text-xs font-black truncate">{style.name}</span>
-                          <span className="text-[10px] text-slate-400">{style.japanese}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{style.desc}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Segmented Control Deck Tabs */}
+            <div className="flex items-center border-b border-white/10 pb-1 gap-1">
+              {[
+                { id: 'prompt', label: 'Prompt & Mood' },
+                { id: 'styles', label: 'Anime Style' },
+                { id: 'tags', label: 'Tag Cloud' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    playPop();
+                    setControlTab(tab.id);
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                    controlTab === tab.id
+                      ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+
+            {/* TAB 1: Prompt & Mood Deck */}
+            {controlTab === 'prompt' && (
+              <div className="space-y-4 animate-fadeIn">
+                {/* Prompt Description */}
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-300">Prompt Description</label>
+                    <button
+                      onClick={handleInspireMe}
+                      className="flex items-center gap-1 text-xs text-yellow-400 font-bold hover:underline cursor-pointer"
+                      title="Randomize Anime Idea"
+                    >
+                      <Shuffle size={13} /> Inspire Me
+                    </button>
+                  </div>
+
+                  <div className="relative flex flex-col bg-white/5 border border-white/10 rounded-2xl overflow-hidden focus-within:border-red-500/50 focus-within:ring-1 focus-within:ring-red-500/50 transition-all">
+                    {/* Reference Image Thumbnail Preview */}
+                    {referenceImage && (
+                      <div className="p-3 bg-red-500/10 border-b border-white/10 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={referenceImage}
+                            alt="Ref"
+                            className="size-10 rounded-lg object-cover border border-white/20"
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-white">Image-to-Sticker Reference</p>
+                            <p className="text-[10px] text-slate-400">AI converts this to anime die-cut</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleClearReferenceImage}
+                          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    )}
+
+                    <textarea
+                      className="w-full p-3.5 bg-transparent border-none focus:ring-0 text-white placeholder:text-slate-500 resize-none min-h-[110px] text-xs lg:text-sm outline-none"
+                      placeholder="Describe your anime sticker... (e.g. 'Chibi cat samurai eating ramen with chopsticks, pastel colors, white border')"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                    ></textarea>
+
+                    {/* Prompt Toolbar */}
+                    <div className="flex items-center justify-between p-2.5 border-t border-white/10 bg-black/30">
+                      <div className="flex items-center gap-1">
+                        {/* Magic AI Enhance */}
+                        <button
+                          onClick={handleEnhancePrompt}
+                          disabled={isEnhancing || !prompt.trim()}
+                          className={`p-2 rounded-xl transition-all flex items-center gap-1.5 ${
+                            isEnhancing
+                              ? 'text-red-400 animate-pulse bg-red-500/10'
+                              : 'text-slate-400 hover:bg-white/10 hover:text-white'
+                          }`}
+                          title="AI Magic Enhance"
+                        >
+                          <Sparkles size={16} />
+                          <span className="text-xs font-bold hidden sm:inline">Enhance</span>
+                        </button>
+
+                        {/* Image-to-Sticker Upload */}
+                        <div className="relative">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={handleImageUpload}
+                            title="Upload reference photo for Image-to-Sticker"
+                          />
+                          <button
+                            className={`p-2 rounded-xl transition-colors ${
+                              referenceImage
+                                ? 'bg-red-500/20 text-red-400'
+                                : 'text-slate-400 hover:bg-white/10 hover:text-white'
+                            }`}
+                            title="Upload Reference Photo (Image-to-Sticker)"
+                          >
+                            <Upload size={16} />
+                          </button>
+                        </div>
+
+                        {/* Voice Dictation (Web Speech API) */}
+                        <button
+                          onClick={handleToggleVoice}
+                          className={`p-2 rounded-xl transition-all ${
+                            isListening
+                              ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50'
+                              : 'text-slate-400 hover:bg-white/10 hover:text-white'
+                          }`}
+                          title={isListening ? 'Listening... click to stop' : 'Voice Dictate Prompt'}
+                        >
+                          {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                        </button>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        className="gap-2 px-5 font-bold shadow-lg"
+                        onClick={handleGenerate}
+                        disabled={isGenerating || (!prompt.trim() && !referenceImage)}
+                      >
+                        {isGenerating ? 'Synthesizing...' : 'Generate'}{' '}
+                        <Zap size={15} fill="currentColor" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Error Alert */}
+                  {error && (
+                    <div className="flex items-start gap-2 text-xs rounded-xl p-3 border bg-red-500/10 border-red-500/20 text-red-300">
+                      <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Color Mood Harmony (Recraft style) */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Color Mood Harmony
+                    </span>
+                    <span className="text-[11px] font-bold text-red-400">
+                      {COLOR_HARMONIES.find((h) => h.id === colorHarmony)?.name}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {COLOR_HARMONIES.map((h) => {
+                      const isSel = colorHarmony === h.id;
+                      return (
+                        <button
+                          key={h.id}
+                          onClick={() => {
+                            playPop();
+                            setColorHarmony(h.id);
+                          }}
+                          className={`p-2 rounded-xl border text-left transition-all ${
+                            isSel
+                              ? 'bg-red-500/20 border-red-500 text-white shadow-md'
+                              : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1 mb-1">
+                            {h.colors.map((c, idx) => (
+                              <div
+                                key={idx}
+                                className="size-2.5 rounded-full"
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-[11px] font-bold text-white truncate">{h.name}</p>
+                          <p className="text-[9px] text-slate-400 truncate">{h.desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: 8 Curated Anime Styles */}
+            {controlTab === 'styles' && (
+              <div className="space-y-3 animate-fadeIn">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Anime Art Style
+                  </h3>
+                  <span className="text-[11px] font-bold text-red-400">
+                    {ANIME_STYLES[activePresetIndex]?.japanese}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  {ANIME_STYLES.map((style, idx) => {
+                    const isSelected = activePresetIndex === idx;
+                    return (
+                      <div
+                        key={style.id}
+                        onClick={() => {
+                          playPop();
+                          setActivePresetIndex(idx);
+                        }}
+                        className={`group relative cursor-pointer overflow-hidden rounded-2xl border-2 transition-all p-1 bg-white/5 ${
+                          isSelected
+                            ? 'border-red-500 ring-4 ring-red-500/20 shadow-xl'
+                            : 'border-transparent hover:border-white/20'
+                        }`}
+                      >
+                        <div
+                          className="aspect-[4/3] rounded-xl bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
+                          style={{ backgroundImage: `url('${style.img}')` }}
+                        >
+                          <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full text-white border border-white/10">
+                            {style.badge}
+                          </div>
+                        </div>
+                        <div className="p-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-white text-xs font-black truncate">{style.name}</span>
+                            <span className="text-[10px] text-slate-400">{style.japanese}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{style.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: Quick Tag Cloud & Manga SFX */}
+            {controlTab === 'tags' && (
+              <div className="space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Quick Anime Tags
+                  </span>
+                  <div className="flex gap-1">
+                    {QUICK_TAG_CATEGORIES.map((cat, idx) => (
+                      <button
+                        key={cat.category}
+                        onClick={() => {
+                          playPop();
+                          setActiveTagTab(idx);
+                        }}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors ${
+                          activeTagTab === idx
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {cat.category}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 p-3 rounded-2xl bg-white/5 border border-white/10 min-h-[220px]">
+                  {QUICK_TAG_CATEGORIES[activeTagTab].tags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => handleAddTag(tag)}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-black/40 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 transition-all active:scale-95 cursor-pointer"
+                    >
+                      + {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </aside>
 
-          {/* Right Gallery of Creations */}
-          <section className="flex-1 bg-[#0a060d] p-4 lg:p-8 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+          {/* Right: Studio Canvas Stage + Creations Gallery */}
+          <section className="flex-1 bg-[#0a060d] p-4 lg:p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+            {/* HERO PREVIEW & INSPECTION STAGE */}
+            {activeHeroSticker && (
+              <div className="relative rounded-3xl bg-white/5 border border-white/10 p-5 lg:p-6 flex flex-col lg:flex-row items-center gap-6 shadow-2xl">
+                {/* Stage Backdrop Switcher Pills */}
+                <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 bg-black/60 backdrop-blur-md p-1 rounded-xl border border-white/10">
+                  {[
+                    { id: 'checker', label: 'Grid' },
+                    { id: 'dark', label: 'Dark' },
+                    { id: 'neon', label: 'Neon' },
+                    { id: 'light', label: 'Light' },
+                  ].map((bd) => (
+                    <button
+                      key={bd.id}
+                      onClick={() => {
+                        playPop();
+                        setStageBackdrop(bd.id);
+                      }}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all ${
+                        stageBackdrop === bd.id
+                          ? 'bg-red-500 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {bd.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Main Hero Sticker Frame */}
+                <div
+                  className={`relative size-56 sm:size-64 lg:size-72 shrink-0 rounded-2xl border border-white/15 overflow-hidden shadow-2xl flex items-center justify-center ${
+                    stageBackdrop === 'checker'
+                      ? "bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMUlEQVQ4T2NkYNgfQEhD/o+OQZIMxG4c1EAaGEY1gDAg0xQ+OqMawDAg0xQ+OqMaQBgA+zQ+O2/1h6gAAAAASUVORK5CYII=')]"
+                      : stageBackdrop === 'neon'
+                      ? 'bg-gradient-to-br from-cyan-950 via-black to-pink-950'
+                      : stageBackdrop === 'light'
+                      ? 'bg-slate-100'
+                      : 'bg-[#0f0913]'
+                  }`}
+                >
+                  <img
+                    src={activeHeroSticker.img}
+                    alt={activeHeroSticker.name}
+                    className="w-full h-full object-contain p-3 drop-shadow-2xl transition-transform hover:scale-105"
+                  />
+                </div>
+
+                {/* Hero Metadata & Action Panel */}
+                <div className="flex-1 flex flex-col justify-between w-full h-full gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] uppercase font-black tracking-wider text-red-400 bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-500/20">
+                        {activeHeroSticker.stylePreset || 'Anime'}
+                      </span>
+                      {activeHeroSticker.emotionLabel && (
+                        <span className="text-[10px] font-bold text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
+                          {activeHeroSticker.emotionIcon} {activeHeroSticker.emotionLabel}
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-500 ml-auto">
+                        {activeHeroSticker.time || 'Saved'}
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg lg:text-xl font-black text-white">{activeHeroSticker.name}</h3>
+                    <p className="text-xs text-slate-400 mt-1 line-clamp-2 italic">
+                      "{activeHeroSticker.prompt}"
+                    </p>
+
+                    {/* Latest Batch Variants Selector if user generated duo or quad */}
+                    {latestBatch.length > 1 && (
+                      <div className="mt-3.5 space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Select Variant / Expression
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {latestBatch.map((varItem, idx) => {
+                            const isCur = activeHeroSticker.id === varItem.id;
+                            return (
+                              <button
+                                key={varItem.id}
+                                onClick={() => {
+                                  playPop();
+                                  setActiveHeroSticker(varItem);
+                                }}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all ${
+                                  isCur
+                                    ? 'bg-red-500 text-white border-red-500 shadow-md'
+                                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                                }`}
+                              >
+                                {varItem.emotionIcon && <span>{varItem.emotionIcon}</span>}
+                                <span>{varItem.emotionLabel || `Variant ${idx + 1}`}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hero Quick Actions Toolbar */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        playPop();
+                        setCustomizingSticker(activeHeroSticker);
+                      }}
+                      className="gap-1.5 text-xs font-bold"
+                    >
+                      <Sliders size={15} /> Customize Contour
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigate('giflab', { sticker: activeHeroSticker })}
+                      className="gap-1.5 text-xs font-bold text-red-300 border-red-500/30 hover:bg-red-500/10"
+                    >
+                      <Wand2 size={15} /> Animate
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadSvgHero(activeHeroSticker)}
+                      className="gap-1.5 text-xs font-bold text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
+                      title="Download Scalable Vector SVG (Recraft Style)"
+                    >
+                      <FileCode2 size={15} /> Vector SVG
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => handleCopySticker(activeHeroSticker, e)}
+                      className="gap-1.5 text-xs font-bold"
+                    >
+                      {copiedId === activeHeroSticker.id ? (
+                        <Check size={15} className="text-green-400" />
+                      ) : (
+                        <Copy size={15} />
+                      )}
+                      {copiedId === activeHeroSticker.id ? 'Copied!' : 'Copy PNG'}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => handleDownload(activeHeroSticker, e)}
+                      className="gap-1.5 text-xs font-bold"
+                    >
+                      <Download size={15} /> Download
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CREATIONS LIBRARY HEADER & GRID */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <h2 className="text-xl lg:text-2xl font-black text-white">Your Creations</h2>
@@ -517,81 +889,104 @@ export const Generator = ({ onNavigate, pageState }) => {
 
             {/* Stickers Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
-              {drafts.map((draft) => (
-                <motion.div
-                  key={draft.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="group relative bg-white/5 rounded-3xl p-4 border border-white/5 hover:border-red-500/30 transition-all hover:shadow-2xl hover:shadow-red-500/10 flex flex-col justify-between"
-                >
-                  <TiltCard>
-                    <div className="aspect-square rounded-2xl overflow-hidden bg-black/60 relative border border-white/10 group-hover:border-red-500/40 transition-all">
-                      <img
-                        src={draft.img}
-                        alt={draft.name}
-                        className="w-full h-full object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                      />
+              {drafts.map((draft) => {
+                const isSelected = activeHeroSticker?.id === draft.id;
+                return (
+                  <motion.div
+                    key={draft.id}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => {
+                      playPop();
+                      setActiveHeroSticker(draft);
+                    }}
+                    className={`group relative bg-white/5 rounded-3xl p-4 border transition-all hover:shadow-2xl hover:shadow-red-500/10 flex flex-col justify-between cursor-pointer ${
+                      isSelected
+                        ? 'border-red-500 ring-2 ring-red-500/30'
+                        : 'border-white/5 hover:border-red-500/30'
+                    }`}
+                  >
+                    <TiltCard>
+                      <div className="aspect-square rounded-2xl overflow-hidden bg-black/60 relative border border-white/10 group-hover:border-red-500/40 transition-all">
+                        <img
+                          src={draft.img}
+                          alt={draft.name}
+                          className="w-full h-full object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+                        />
 
-                      {/* Hover Action Overlay */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2.5 backdrop-blur-[2px]">
-                        {/* Customize Studio */}
-                        <button
-                          onClick={() => { playPop(); setCustomizingSticker(draft); }}
-                          className="size-11 bg-white text-slate-900 rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
-                          title="Open Sticker Customizer (Border, Decals, Text)"
-                        >
-                          <Sliders size={18} />
-                        </button>
+                        {/* Hover Action Overlay */}
+                        <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                          {/* Customize Studio */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              playPop();
+                              setCustomizingSticker(draft);
+                            }}
+                            className="size-10 bg-white text-slate-900 rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
+                            title="Open Sticker Customizer"
+                          >
+                            <Sliders size={16} />
+                          </button>
 
-                        {/* Animate in GIF Lab */}
-                        <button
-                          onClick={() => onNavigate('giflab', { sticker: draft })}
-                          className="size-11 bg-red-500 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
-                          title="Animate in GIF Lab"
-                        >
-                          <Wand2 size={18} />
-                        </button>
+                          {/* Animate in GIF Lab */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigate('giflab', { sticker: draft });
+                            }}
+                            className="size-10 bg-red-500 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-transform"
+                            title="Animate in GIF Lab"
+                          >
+                            <Wand2 size={16} />
+                          </button>
 
-                        {/* Copy Transparent PNG */}
-                        <button
-                          onClick={(e) => handleCopySticker(draft, e)}
-                          className="size-11 bg-white/20 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 hover:bg-white/30 transition-transform"
-                          title="Copy PNG to Clipboard"
-                        >
-                          {copiedId === draft.id ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
-                        </button>
+                          {/* Copy Transparent PNG */}
+                          <button
+                            onClick={(e) => handleCopySticker(draft, e)}
+                            className="size-10 bg-white/20 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 hover:bg-white/30 transition-transform"
+                            title="Copy PNG to Clipboard"
+                          >
+                            {copiedId === draft.id ? (
+                              <Check size={16} className="text-green-400" />
+                            ) : (
+                              <Copy size={16} />
+                            )}
+                          </button>
 
-                        {/* Download */}
-                        <button
-                          onClick={(e) => handleDownload(draft, e)}
-                          className="size-11 bg-white/20 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 hover:bg-white/30 transition-transform"
-                          title="Download Image"
-                        >
-                          {downloadingId === draft.id ? <Check size={18} /> : <Download size={18} />}
-                        </button>
+                          {/* Download */}
+                          <button
+                            onClick={(e) => handleDownload(draft, e)}
+                            className="size-10 bg-white/20 text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 hover:bg-white/30 transition-transform"
+                            title="Download Image"
+                          >
+                            {downloadingId === draft.id ? <Check size={16} /> : <Download size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                    </TiltCard>
+
+                    <div className="mt-4 flex flex-col gap-1.5 px-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-sm text-white truncate max-w-[170px]">
+                          {draft.name}
+                        </h4>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {draft.time || 'Recent'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-black tracking-wider text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md">
+                          {draft.stylePreset || 'Anime'}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-semibold">
+                          {isSelected ? 'Active Preview' : 'Click to View'}
+                        </span>
                       </div>
                     </div>
-                  </TiltCard>
-
-                  <div className="mt-4 flex flex-col gap-1.5 px-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-sm text-white truncate max-w-[170px]">{draft.name}</h4>
-                      <span className="text-[10px] font-bold text-slate-400">{draft.time || 'Recent'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase font-black tracking-wider text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md">
-                        {draft.stylePreset || 'Anime'}
-                      </span>
-                      <button
-                        onClick={() => { playPop(); setCustomizingSticker(draft); }}
-                        className="text-[11px] text-slate-400 hover:text-white font-semibold flex items-center gap-1 hover:underline"
-                      >
-                        <Sliders size={12} /> Edit
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
 
               {/* Generating Placeholder State */}
               {isGenerating && (
@@ -619,12 +1014,23 @@ export const Generator = ({ onNavigate, pageState }) => {
           onSave={(updated) => {
             const list = saveStickerToStorage(updated, user);
             setDrafts(list);
+            if (activeHeroSticker?.id === updated.id) {
+              setActiveHeroSticker(updated);
+            }
           }}
           onAnimate={(sticker) => {
             onNavigate('giflab', { sticker });
           }}
         />
       )}
+
+      {/* Sticker Playground Modal */}
+      <StickerPlaygroundModal
+        open={playgroundModalOpen}
+        initialSticker={activeHeroSticker}
+        libraryStickers={drafts}
+        onClose={() => setPlaygroundModalOpen(false)}
+      />
     </div>
   );
 };
