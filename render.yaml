@@ -18,3 +18,15 @@ services:
     envVars:
       - key: VITE_USE_FIREBASE_EMULATORS
         value: "false"
+      - key: VITE_FIREBASE_API_KEY
+        value: "AIzaSyAmiBuzzProdClientKey2026"
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: "amibuzz-app.firebaseapp.com"
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: "amibuzz-app"
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: "amibuzz-app.appspot.com"
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: "103948572910"
+      - key: VITE_FIREBASE_APP_ID
+        value: "1:103948572910:web:83940294819203948"

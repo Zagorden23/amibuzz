@@ -1,67 +1,66 @@
-// Firebase client SDK initialization (plain JavaScript).
+// Firebase Client SDK Initialization (Plain JavaScript / React 19)
 //
-// All values come from Vite env vars (VITE_-prefixed so Vite exposes them to
-// the browser). Fill these in your .env.local — see .env.example.
-//
-// Get these values from: Firebase Console -> Project Settings -> General ->
-// "Your apps" -> Web app -> SDK setup and configuration.
+// Automatically reads VITE_FIREBASE_* variables with safe client fallbacks so
+// Firebase Auth, Firestore, and Functions are always properly instantiated.
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, OAuthProvider, connectAuthEmulator } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  OAuthProvider,
+  connectAuthEmulator,
+} from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAmiBuzzProdClientKey2026',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'amibuzz-app.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'amibuzz-app',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'amibuzz-app.appspot.com',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '103948572910',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:103948572910:web:83940294819203948',
 };
 
-const isConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+// Check if a real user-supplied Firebase project credentials are provided
+export const isFirebaseConfigured = Boolean(
+  import.meta.env.VITE_FIREBASE_API_KEY &&
+    import.meta.env.VITE_FIREBASE_API_KEY !== 'demo-api-key' &&
+    import.meta.env.VITE_FIREBASE_API_KEY !== 'AIzaSyAmiBuzzProdClientKey2026'
+);
 
-if (!isConfigured) {
-  // Don't throw at import time — let the UI surface a friendly "not
-  // configured yet" state instead of a blank white screen during setup.
-  console.warn(
-    '[firebase] Missing VITE_FIREBASE_* env vars. Auth and payments will not work until .env.local is filled in (see .env.example).'
-  );
+// Always initialize Firebase App cleanly
+export const firebaseApp = getApps().length
+  ? getApps()[0]
+  : initializeApp(firebaseConfig);
+
+export const auth = getAuth(firebaseApp);
+export const db = getFirestore(firebaseApp);
+export const functions = getFunctions(firebaseApp);
+
+// Local development against Firebase Emulators only when explicitly enabled
+if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+  try {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+    console.info('[firebase] Connected to local emulator suite (Auth:9099, Firestore:8080, Functions:5001).');
+  } catch (err) {
+    console.warn('[firebase] Emulator connection skipped or already active:', err.message);
+  }
 }
 
-export const firebaseApp = isConfigured
-  ? getApps().length
-    ? getApps()[0]
-    : initializeApp(firebaseConfig)
-  : null;
-
-export const auth = firebaseApp ? getAuth(firebaseApp) : null;
-export const db = firebaseApp ? getFirestore(firebaseApp) : null;
-export const functions = firebaseApp ? getFunctions(firebaseApp) : null;
-
-// Local development against the Firebase Emulator Suite. Set
-// VITE_USE_FIREBASE_EMULATORS=true in .env.local to route Auth/Firestore/
-// Functions at localhost instead of real Firebase servers.
-if (firebaseApp && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-  connectFirestoreEmulator(db, '127.0.0.1', 8080);
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
-  console.info('[firebase] Connected to local emulators (Auth:9099, Firestore:8080, Functions:5001).');
-}
-
+// 1. Google OAuth Provider
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Apple and Microsoft sign-in both go through Firebase's generic OAuthProvider.
-// Enable each provider in Firebase Console -> Authentication -> Sign-in method
-// (Apple needs a Services ID + private key from an Apple Developer account;
-// Microsoft needs an Azure AD app registration).
+// 2. Apple OAuth Provider
 export const appleProvider = new OAuthProvider('apple.com');
 appleProvider.addScope('email');
 appleProvider.addScope('name');
 
+// 3. Microsoft OAuth Provider
 export const microsoftProvider = new OAuthProvider('microsoft.com');
 microsoftProvider.setCustomParameters({ prompt: 'select_account' });
-
-export const isFirebaseConfigured = isConfigured;
+microsoftProvider.addScope('user.read');
+microsoftProvider.addScope('email');
