@@ -6,6 +6,7 @@ import {
   Settings,
   HelpCircle,
   PlusCircle,
+  Wand2,
   LogOut,
   Menu,
   X,
@@ -34,7 +35,7 @@ export const Sidebar = ({ currentPath, onNavigate }) => {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard & Packs', icon: Home },
-    { id: 'generator', label: 'Sticker Studio', icon: PlusCircle },
+    { id: 'generator', label: 'Animeify Studio', icon: Wand2 },
     { id: 'giflab', label: 'GIF Animation Lab', icon: ImageIcon },
     { id: 'pricing', label: 'Pricing & Plans', icon: CreditCard },
   ];

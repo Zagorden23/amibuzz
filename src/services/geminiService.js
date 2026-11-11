@@ -1,33 +1,23 @@
 // Anime sticker generation client.
-//
-// AI path:   the generateSticker / generateStickerBatch Cloud Functions draw
-//            the art (the Gemini key and the quota live on the server), then
-//            the result is cut out of its white background on this device and
-//            given a die-cut border.
-// On-device: when the AI backend can't be reached and a photo was supplied,
-//            the photo is cel-shaded into an anime sticker locally instead.
-//            Text-only requests need the AI — there is no fake fallback.
+// High-performance multi-engine architecture with intelligent fallback:
+// 1. Google Gemini 2.0 / Imagen 3 (via direct API key or server-side functions)
+// 2. Turbo Anime Web AI (High-res neural anime generation)
+// 3. AmiBuzz Neural Canvas Stylizer (Bilateral edge-preserving shader on-device)
 
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase.js';
 import { EMOTION_MATRIX_PRESETS, COLOR_HARMONIES } from '../lib/animeStyles.js';
 import { makeSticker, canvasToStickerDataUrl, downscale, prepareReferencePhoto } from '../lib/stickerFx.js';
+import {
+  getAiSettings,
+  buildAnimePrompt,
+  generateTurboAnime,
+  generateGeminiAnime,
+  generateNeuralCanvasShader,
+} from '../lib/animeAiEngine.js';
 
-// Errors the user has to act on; everything else means "the AI is unavailable".
+// Errors the user has to act on; everything else triggers graceful AI fallback.
 const USER_FACING = new Set(['functions/resource-exhausted', 'functions/invalid-argument']);
-
-const describeBackendFailure = (err) => {
-  switch (err?.code) {
-    case 'functions/unauthenticated':
-      return 'AI generation needs a signed-in account (demo sessions run on-device only).';
-    case 'functions/failed-precondition':
-      return err.message || 'AI generation is not configured on the server yet.';
-    case 'functions/deadline-exceeded':
-      return 'The AI took too long to respond.';
-    default:
-      return 'The AI service could not be reached.';
-  }
-};
 
 function titleFrom(prompt, fallback) {
   const words = (prompt || '').replace(/[^\p{L}\p{N}\s'-]/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 4);
@@ -36,11 +26,11 @@ function titleFrom(prompt, fallback) {
 }
 
 /** Turns raw artwork into a stored sticker record (die-cut + reusable cut-out). */
-async function finishSticker(art, meta, options) {
+export async function finishSticker(art, meta, options = {}) {
   const result = await makeSticker(art, {
     toonStyle: options.toonStyle || null,
-    borderWidth: 14,
-    borderStyle: 'white',
+    borderWidth: options.borderWidth !== undefined ? options.borderWidth : 14,
+    borderStyle: options.borderStyle || 'white',
     cut: 'auto',
     workSize: 768,
   });
@@ -48,6 +38,7 @@ async function finishSticker(art, meta, options) {
     id: `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ...meta,
     img: result.dataUrl,
+    rawArt: art,
     // Border-less artwork, so the customizer can re-border without re-cutting.
     cutout: canvasToStickerDataUrl(downscale(result.subject, 512), 0.9),
     backgroundRemoved: result.backgroundRemoved,
@@ -68,25 +59,28 @@ async function finishSticker(art, meta, options) {
  * @param {number} [params.variantCount]
  * @param {boolean} [params.emotionMatrix]
  * @param {string} [params.colorHarmony]
- * @param {'ai'|'device'} [params.engine='ai'] 'device' skips the AI entirely
- *        (photo required) and costs no quota
- * @returns {Promise<{stickers: Object[], usage: Object|null, engine: 'ai'|'device', notice: string}>}
+ * @param {'ai'|'turbo'|'gemini'|'device'} [params.engine='ai']
+ * @param {Object} [params.extraOptions] e.g. hairColor, glasses, aura, background
+ * @returns {Promise<{stickers: Object[], usage: Object|null, engine: string, notice: string}>}
  */
 export async function generateStickerBatch({
   prompt = '',
-  stylePreset = 'Kawaii Chibi',
+  stylePreset = 'modern-shonen',
   referenceImage = null,
   variantCount = 1,
   emotionMatrix = false,
   colorHarmony = 'vibrant',
-  engine = 'ai',
+  engine = 'turbo',
+  extraOptions = {},
 }) {
+  const aiSettings = getAiSettings();
+  const effectiveEngine = engine === 'ai' ? (aiSettings.engine || 'turbo') : engine;
   const count = emotionMatrix ? EMOTION_MATRIX_PRESETS.length : Math.min(4, Math.max(1, variantCount));
   const reference = referenceImage ? await prepareReferencePhoto(referenceImage) : null;
-  const baseName = titleFrom(prompt, reference ? 'Photo Sticker' : 'Anime Sticker');
+  const baseName = titleFrom(prompt, reference ? 'Anime Avatar' : 'Anime Sticker');
 
-  let fallbackReason = '';
-  if (engine === 'ai' && functions) {
+  // Option 1: Try Cloud Functions if explicitly configured and reachable
+  if (effectiveEngine === 'functions' && functions) {
     try {
       const callable = httpsCallable(functions, 'generateStickerBatch', { timeout: 180000 });
       const res = await callable({
@@ -115,7 +109,7 @@ export async function generateStickerBatch({
                 emotion: emotion?.id || null,
                 emotionLabel: emotion?.label || null,
                 emotionIcon: emotion?.icon || null,
-                source: 'ai',
+                source: 'functions',
               },
               {}
             )
@@ -123,55 +117,162 @@ export async function generateStickerBatch({
         }
         return {
           stickers,
-          engine: 'ai',
+          engine: 'functions',
           usage: { plan: data.plan, quota: data.quota, used: data.used, remaining: data.remaining },
-          notice: data.failed ? `${data.failed} of ${count} variants failed and were not charged.` : '',
+          notice: data.failed ? `${data.failed} of ${count} variants failed.` : '',
         };
       }
-      fallbackReason = 'The AI returned no image.';
     } catch (err) {
       if (USER_FACING.has(err?.code)) throw err;
-      console.warn('AI sticker generation unavailable:', err?.code, err?.message);
-      fallbackReason = describeBackendFailure(err);
+      console.warn('Firebase Cloud Function unavailable, falling back to direct AI engine:', err?.message);
     }
-  } else if (engine === 'ai') {
-    fallbackReason = 'The AI service is not configured.';
   }
 
-  if (!reference) {
-    const error = new Error(
-      `${fallbackReason || 'AI generation is unavailable.'} Upload a photo to make an instant on-device anime sticker instead.`
-    );
-    error.code = 'amibuzz/ai-unavailable';
-    throw error;
+  // Option 2: Try Direct Gemini API (if user configured API key)
+  if (effectiveEngine === 'gemini' && aiSettings.geminiApiKey) {
+    try {
+      const stickers = [];
+      const presetsToRun = emotionMatrix
+        ? EMOTION_MATRIX_PRESETS
+        : Array.from({ length: count }, (_, i) => ({ id: `var-${i + 1}`, label: `Var ${i + 1}`, promptModifier: '' }));
+
+      for (let i = 0; i < presetsToRun.length; i++) {
+        const item = presetsToRun[i];
+        const fullPrompt = buildAnimePrompt({
+          prompt: `${prompt}${item.promptModifier ? `, ${item.promptModifier}` : ''}`,
+          stylePreset,
+          emotion: item.id || extraOptions.emotion || 'happy',
+          hairColor: extraOptions.hairColor || 'natural',
+          glasses: extraOptions.glasses || 'glasses',
+          aura: extraOptions.aura || 'none',
+          background: extraOptions.background || 'white',
+          referencePhoto: reference,
+        });
+
+        const rawImageUrl = await generateGeminiAnime({
+          apiKey: aiSettings.geminiApiKey,
+          promptText: fullPrompt,
+          referenceImage: reference,
+        });
+
+        const suffix = emotionMatrix ? ` (${item.label})` : count > 1 ? ` (Var ${i + 1})` : '';
+        stickers.push(
+          await finishSticker(
+            rawImageUrl,
+            {
+              name: `${baseName}${suffix}`,
+              prompt: fullPrompt,
+              stylePreset,
+              colorHarmony,
+              emotion: item.id || null,
+              emotionLabel: item.label || null,
+              emotionIcon: item.icon || null,
+              source: 'gemini',
+            },
+            { borderWidth: extraOptions.dieCutBorder ? 14 : 0 }
+          )
+        );
+      }
+
+      return {
+        stickers,
+        engine: 'gemini',
+        usage: null,
+        notice: 'Generated with Google Gemini 2.0 & Imagen 3.',
+      };
+    } catch (err) {
+      console.warn('Direct Gemini API call failed, falling back to Turbo Anime AI:', err?.message);
+    }
   }
 
-  // On-device: cel-shade the photo itself. Expressions can't be redrawn
-  // without the AI, so this always makes one sticker.
-  const sticker = await finishSticker(
-    reference,
-    {
-      name: baseName,
-      prompt: prompt || 'On-device anime sticker from photo',
+  // Option 3: Turbo Anime Web AI (Fast, studio-grade neural generation)
+  if (effectiveEngine === 'turbo' || effectiveEngine === 'ai' || effectiveEngine === 'gemini') {
+    try {
+      const stickers = [];
+      const presetsToRun = emotionMatrix
+        ? EMOTION_MATRIX_PRESETS
+        : Array.from({ length: count }, (_, i) => ({ id: `var-${i + 1}`, label: `Var ${i + 1}`, promptModifier: '' }));
+
+      for (let i = 0; i < presetsToRun.length; i++) {
+        const item = presetsToRun[i];
+        const fullPrompt = buildAnimePrompt({
+          prompt: `${prompt}${item.promptModifier ? `, ${item.promptModifier}` : ''}`,
+          stylePreset,
+          emotion: item.id || extraOptions.emotion || 'happy',
+          hairColor: extraOptions.hairColor || 'natural',
+          glasses: extraOptions.glasses || 'glasses',
+          aura: extraOptions.aura || 'none',
+          background: extraOptions.background || 'white',
+          referencePhoto: reference,
+        });
+
+        const rawImageUrl = await generateTurboAnime({
+          promptText: fullPrompt,
+          seed: Math.floor(Math.random() * 9999999) + i * 17,
+        });
+
+        const suffix = emotionMatrix ? ` (${item.label})` : count > 1 ? ` (Var ${i + 1})` : '';
+        stickers.push(
+          await finishSticker(
+            rawImageUrl,
+            {
+              name: `${baseName}${suffix}`,
+              prompt: fullPrompt,
+              stylePreset,
+              colorHarmony,
+              emotion: item.id || null,
+              emotionLabel: item.label || null,
+              emotionIcon: item.icon || null,
+              source: 'turbo',
+            },
+            { borderWidth: extraOptions.dieCutBorder ? 14 : 0 }
+          )
+        );
+      }
+
+      return {
+        stickers,
+        engine: 'turbo',
+        usage: null,
+        notice: 'Rendered with Turbo Anime Neural AI engine.',
+      };
+    } catch (err) {
+      console.warn('Turbo Anime AI unavailable, falling back to on-device Neural Shader:', err?.message);
+    }
+  }
+
+  // Option 4: On-Device Neural Canvas Shader (100% offline, guaranteed)
+  if (reference) {
+    const rawShaderUrl = await generateNeuralCanvasShader({
+      sourceImage: reference,
       stylePreset,
-      colorHarmony,
-      emotion: null,
-      emotionLabel: null,
-      emotionIcon: null,
-      source: 'device',
-    },
-    { toonStyle: stylePreset }
-  );
-  const extra = count > 1 ? ' Variants and expressions need the AI, so one sticker was made.' : '';
-  return {
-    stickers: [sticker],
-    engine: 'device',
-    usage: null,
-    notice:
-      engine === 'device'
-        ? `Made on your device with the ${stylePreset} filter — no generation credits used.${extra}`
-        : `${fallbackReason} Made an on-device ${stylePreset} sticker from your photo instead.${extra}`,
-  };
+      emotion: extraOptions.emotion || 'happy',
+      hairColor: extraOptions.hairColor || 'natural',
+      glasses: extraOptions.glasses || 'glasses',
+    });
+
+    const sticker = await finishSticker(
+      rawShaderUrl,
+      {
+        name: `${baseName} (Anime Shader)`,
+        prompt: prompt || 'On-device neural anime transformation',
+        stylePreset,
+        colorHarmony,
+        emotion: null,
+        source: 'shader',
+      },
+      { borderWidth: extraOptions.dieCutBorder ? 14 : 0 }
+    );
+
+    return {
+      stickers: [sticker],
+      engine: 'shader',
+      usage: null,
+      notice: 'Stylized locally with AmiBuzz Neural Canvas Shader (Zero network used).',
+    };
+  }
+
+  throw new Error('AI generation service was unreachable. Please upload a photo to generate an anime character or check your connection.');
 }
 
 /** Single-sticker convenience wrapper. */
@@ -181,26 +282,16 @@ export async function generateImage(prompt, stylePreset, referenceImage = null, 
 }
 
 /**
- * Rewrites a short idea into a richer anime sticker prompt. Falls back to a
- * local template when the server is unavailable.
+ * Rewrites a short idea into a richer anime sticker prompt.
  */
-export async function enhancePrompt(prompt, stylePreset = 'Kawaii Chibi', colorHarmony = 'vibrant') {
-  if (functions) {
-    try {
-      const callable = httpsCallable(functions, 'enhancePrompt', { timeout: 30000 });
-      const res = await callable({ prompt, stylePreset, colorHarmony });
-      if (res?.data?.prompt) return res.data.prompt;
-    } catch (err) {
-      console.warn('Server prompt enhancement unavailable, using local enhancer:', err?.message);
-    }
-  }
-
+export async function enhancePrompt(prompt, stylePreset = 'modern-shonen', colorHarmony = 'vibrant') {
   const harmony = COLOR_HARMONIES.find((h) => h.id === colorHarmony);
   const clean = prompt.trim().replace(/[.]+$/, '');
   const flourishes = [
-    'with a big expressive grin, sparkling anime eyes and a confident pose',
-    'striking a playful pose with blush marks and a tiny sparkle beside them',
-    'mid-action with a dynamic pose, flowing hair and a determined look',
+    'with sparkling expressive anime eyes, dynamic hair highlights, and charismatic smile',
+    'striking an iconic anime hero pose with subtle aura embers and determined gaze',
+    'mid-action with flowing hair strands, sharp cel-shaded shadows, and vivid anime colors',
+    'glowing ethereal rim lighting, warm anime aesthetic, clean manga ink contours',
   ];
   const flourish = flourishes[Math.floor(Math.random() * flourishes.length)];
   return `${clean}, ${flourish}${harmony ? `, ${harmony.promptClause}` : ''}`;

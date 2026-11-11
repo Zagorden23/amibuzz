@@ -226,9 +226,9 @@ export const Dashboard = ({ onNavigate }) => {
 
             <Button
               onClick={() => onNavigate('generator')}
-              className="gap-2 text-sm px-4 py-2 font-bold shadow-lg"
+              className="gap-2 text-sm px-4 py-2 font-black shadow-lg bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30"
             >
-              <PlusCircle size={18} /> <span className="hidden sm:inline">Create New</span>
+              <Wand2 size={18} /> <span className="hidden sm:inline">Animeify Studio</span>
             </Button>
           </div>
         </header>
@@ -252,6 +252,30 @@ export const Dashboard = ({ onNavigate }) => {
                   <p className={`text-2xl lg:text-3xl font-black ${stat.color}`}>{stat.value}</p>
                 </motion.div>
               ))}
+            </div>
+
+            {/* Animeify Canva Studio Highlight Banner */}
+            <div className="relative overflow-hidden rounded-3xl p-6 lg:p-8 border border-purple-500/30 bg-gradient-to-r from-[#200f38] via-[#160c29] to-[#0c0714] shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-black uppercase tracking-wider">
+                  <Sparkles size={13} className="text-purple-400" />
+                  <span>Canva-Grade Animeify Studio</span>
+                </div>
+                <h3 className="text-xl lg:text-2xl font-black text-white">
+                  Turn Photos into High-End Anime Characters in Seconds
+                </h3>
+                <p className="text-xs lg:text-sm text-slate-300 leading-relaxed">
+                  Inspired by modern Canva workflows: Select or upload your photo, customize Shonen, Makoto Shinkai, or Ghibli aesthetics, and arrange on an interactive canvas with manga speech balloons, background removers, and die-cut borders.
+                </p>
+              </div>
+
+              <Button
+                onClick={() => onNavigate('generator')}
+                className="shrink-0 font-extrabold px-6 py-3.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-xl shadow-purple-600/30 text-sm gap-2"
+              >
+                <Wand2 size={18} />
+                <span>Launch Animeify Studio</span>
+              </Button>
             </div>
 
             {/* Sticker Pack Tabs Bar & WhatsApp Export */}

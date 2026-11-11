@@ -15,6 +15,10 @@ import {
   VolumeX,
   Download,
   Trash2,
+  Cpu,
+  Key,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -25,6 +29,7 @@ import { openStripeBillingPortal } from '../services/paymentService.js';
 import { CheckoutModal } from '../components/payment/CheckoutModal.jsx';
 import { isSoundEnabled, toggleSound, playPop, playSuccess } from '../lib/audio.js';
 import { getStoredStickers } from '../services/stickerStorage.js';
+import { getAiSettings, saveAiSettings, AI_ENGINES } from '../lib/animeAiEngine.js';
 
 export const Settings = ({ onNavigate }) => {
   const { user, profile, signOutUser } = useAuth();
@@ -42,6 +47,13 @@ export const Settings = ({ onNavigate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
+
+  // AI & Gemini Settings state
+  const [aiSettings, setAiSettings] = useState(getAiSettings());
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState(getAiSettings().geminiApiKey || '');
+  const [aiTestStatus, setAiTestStatus] = useState('idle');
+  const [aiTestMessage, setAiTestMessage] = useState('');
+  const [aiSavedSuccess, setAiSavedSuccess] = useState(false);
 
   useEffect(() => {
     if (user?.displayName || profile?.displayName) {
@@ -172,6 +184,14 @@ export const Settings = ({ onNavigate }) => {
                 }`}
               >
                 <Shield size={18} /> Data & Security
+              </button>
+              <button
+                onClick={() => { playPop(); setActiveTab('ai'); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left text-sm font-bold ${
+                  activeTab === 'ai' ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <Cpu size={18} /> AI & Gemini Engine
               </button>
               <button
                 onClick={() => { playPop(); setActiveTab('billing'); }}
@@ -312,6 +332,146 @@ export const Settings = ({ onNavigate }) => {
                         <Download size={15} /> Export
                       </Button>
                     </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === 'ai' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+                  <div>
+                    <h2 className="text-xl font-bold text-white mb-1">AI Engine & Gemini API</h2>
+                    <p className="text-sm text-slate-400">Select image generation providers and configure custom Google AI keys.</p>
+                  </div>
+
+                  {/* Engine Options */}
+                  <div className="space-y-4 max-w-xl">
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                      Active Generation Engine
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {AI_ENGINES.map((eng) => {
+                        const isActive = aiSettings.engine === eng.id;
+                        return (
+                          <div
+                            key={eng.id}
+                            onClick={() => {
+                              playPop();
+                              const updated = { ...aiSettings, engine: eng.id };
+                              setAiSettings(updated);
+                              saveAiSettings(updated);
+                            }}
+                            className={`p-3.5 rounded-xl border cursor-pointer transition relative flex flex-col justify-between ${
+                              isActive
+                                ? 'border-purple-500 bg-purple-500/15 shadow-lg shadow-purple-500/10'
+                                : 'border-white/5 bg-black/30 hover:border-white/20'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider">
+                                  {eng.badge}
+                                </span>
+                                {isActive && <Check size={14} className="text-purple-400" />}
+                              </div>
+                              <h4 className="text-sm font-bold text-white mb-1">{eng.name}</h4>
+                              <p className="text-[11px] text-slate-400 leading-relaxed">{eng.desc}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Gemini Key Config */}
+                  <div className="p-5 rounded-2xl bg-black/30 border border-white/10 space-y-4 max-w-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-white font-bold text-sm">
+                        <Key size={16} className="text-purple-400" />
+                        Google Gemini API Key
+                      </div>
+                      <a
+                        href="https://aistudio.google.com/apikey"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold"
+                      >
+                        Get Free Key <ExternalLink size={12} />
+                      </a>
+                    </div>
+
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Connect your Google Gemini key for multimodal face-to-anime feature extraction and Imagen 3 generation. Stored safely in local storage.
+                    </p>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={geminiApiKeyInput}
+                        onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                        placeholder="AIzaSy..."
+                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          const k = geminiApiKeyInput.trim();
+                          if (!k) {
+                            setAiTestStatus('error');
+                            setAiTestMessage('Please enter an API key.');
+                            return;
+                          }
+                          setAiTestStatus('testing');
+                          try {
+                            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${k}`);
+                            if (res.ok) {
+                              setAiTestStatus('success');
+                              setAiTestMessage('Gemini key verified successfully!');
+                              playSuccess();
+                            } else {
+                              const err = await res.json().catch(() => ({}));
+                              setAiTestStatus('error');
+                              setAiTestMessage(err?.error?.message || 'Invalid key.');
+                            }
+                          } catch {
+                            setAiTestStatus('error');
+                            setAiTestMessage('Network error while testing.');
+                          }
+                        }}
+                      >
+                        {aiTestStatus === 'testing' ? 'Testing...' : 'Test Key'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          playPop();
+                          const k = geminiApiKeyInput.trim();
+                          const updated = { ...aiSettings, geminiApiKey: k };
+                          if (k && aiSettings.engine !== 'gemini') updated.engine = 'gemini';
+                          setAiSettings(updated);
+                          saveAiSettings(updated);
+                          setAiSavedSuccess(true);
+                          playSuccess();
+                          setTimeout(() => setAiSavedSuccess(false), 2500);
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </div>
+
+                    {aiTestStatus === 'success' && (
+                      <p className="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
+                        <Check size={14} /> {aiTestMessage}
+                      </p>
+                    )}
+                    {aiTestStatus === 'error' && (
+                      <p className="text-xs text-red-400 font-semibold">{aiTestMessage}</p>
+                    )}
+                    {aiSavedSuccess && (
+                      <p className="text-xs text-purple-400 font-semibold flex items-center gap-1">
+                        <Sparkles size={14} /> AI Settings saved successfully.
+                      </p>
+                    )}
                   </div>
                 </motion.div>
               )}

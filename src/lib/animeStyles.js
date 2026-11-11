@@ -2,6 +2,36 @@
 
 export const ANIME_STYLES = [
   {
+    id: 'makoto-shinkai',
+    name: 'Makoto Shinkai',
+    japanese: '新海誠スタイル',
+    badge: 'Cinematic',
+    desc: 'Luminous skies, breathtaking lighting, emotional realism, Your Name aesthetic.',
+    color: '#38bdf8',
+    img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=400&q=80',
+    promptSuffix: 'Makoto Shinkai anime style, CoMix Wave Films aesthetic, Your Name aesthetic, ethereal lighting, radiant sky reflections, volumetric sunbeams, warm color harmony, highly detailed anime portrait',
+  },
+  {
+    id: 'modern-shonen',
+    name: 'Modern Shonen',
+    japanese: 'MAPPA風',
+    badge: 'Hype',
+    desc: 'Studio MAPPA & Jujutsu Kaisen aesthetic, sharp ink linework, dynamic cel shading.',
+    color: '#ef4444',
+    img: 'https://images.unsplash.com/photo-1541562232579-512a21360020?auto=format&fit=crop&w=400&q=80',
+    promptSuffix: 'modern shonen anime illustration, Studio MAPPA style, Jujutsu Kaisen aesthetic, crisp dynamic lines, sharp cel shading, vibrant colors, anime character portrait',
+  },
+  {
+    id: 'pastel-shoujo',
+    name: 'Pastel Shoujo',
+    japanese: '京アニ風',
+    badge: 'Aesthetic',
+    desc: 'Kyoto Animation & K-On charm, soft glowing eyes, delicate hair strands, pastel warmth.',
+    color: '#f472b6',
+    img: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=400&q=80',
+    promptSuffix: 'Kyoto Animation style, Violet Evergarden aesthetic, soft glowing anime eyes, delicate hair strands, pastel cherry blossom tones, dreamy ethereal lighting',
+  },
+  {
     id: 'chibi-kawaii',
     name: 'Kawaii Chibi',
     japanese: 'ちびカワイイ',
@@ -25,9 +55,9 @@ export const ANIME_STYLES = [
     id: 'shonen-battle',
     name: 'Shonen Battle',
     japanese: '少年バトル',
-    badge: 'Hype',
+    badge: 'Action',
     desc: 'Dynamic action ink, glowing energy aura, intense battle expressions.',
-    color: '#ef4444',
+    color: '#f97316',
     img: 'https://images.unsplash.com/photo-1541562232579-512a21360020?auto=format&fit=crop&w=400&q=80',
     promptSuffix: 'shonen anime action sticker, dynamic fighting pose, dramatic ink linework, glowing energy aura, intense emotion, vibrant cel shaded colors, bold white die-cut sticker outline, isolated subject',
   },
@@ -66,10 +96,10 @@ export const ANIME_STYLES = [
     name: 'Dark Fantasy',
     japanese: 'ダークファンタジー',
     badge: 'Mystic',
-    desc: 'Gothic sorcerers, glowing arcane runes, ethereal violet glow.',
+    desc: 'Solo Leveling manhwa style, glowing ethereal runes, shadow auras.',
     color: '#a855f7',
     img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=400&q=80',
-    promptSuffix: 'dark fantasy anime sticker, gothic aesthetic, glowing mystical runes, ethereal violet and crimson magic flames, ornate cel shading, crisp white sticker die-cut',
+    promptSuffix: 'dark fantasy anime sticker, Solo Leveling manhwa style, glowing mystical runes, ethereal violet and blue flames, ornate cel shading, crisp white sticker die-cut',
   },
   {
     id: 'pixel-arcade',
@@ -243,3 +273,68 @@ export const QUICK_TAG_CATEGORIES = [
     ],
   },
 ];
+
+// Aesthetic Canvas Backgrounds
+export const CANVA_BACKGROUNDS = [
+  { id: 'white', name: 'Pure White (Sticker)', type: 'solid', color: '#ffffff' },
+  { id: 'transparent', name: 'Transparent Checker', type: 'transparent' },
+  { id: 'tokyo', name: 'Shinjuku Neon Rain', type: 'image', url: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'sakura', name: 'Cherry Blossom Lane', type: 'image', url: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'rooftop', name: 'Sunset School Rooftop', type: 'image', url: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'cyberpunk', name: 'Cyberpunk Alley', type: 'image', url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'shrine', name: 'Torii Gate Shrine', type: 'image', url: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'cosmos', name: 'Celestial Galaxy', type: 'image', url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1200&q=80' },
+  { id: 'gradient_synth', name: 'Synthwave Gradient', type: 'gradient', gradient: 'linear-gradient(135deg, #180929 0%, #3b0764 50%, #0369a1 100%)' },
+  { id: 'gradient_pastel', name: 'Pastel Dream', type: 'gradient', gradient: 'linear-gradient(135deg, #fce7f3 0%, #ede9fe 50%, #e0f2fe 100%)' },
+];
+
+export const ANIME_GLASSES_PRESETS = [
+  { id: 'glasses', label: 'Classic Glasses', icon: '👓', desc: 'Stylish black rectangular frames' },
+  { id: 'wireframe', label: 'Wireframe Gold', icon: '✨', desc: 'Refined intellectual gold round frames' },
+  { id: 'glowing', label: 'Glowing Anime Glint', icon: '✧', desc: 'Iconic anime tactical glasses reflection' },
+  { id: 'sunglasses', label: 'Cool Shades', icon: '🕶️', desc: 'Tinted dark anime sunglasses' },
+  { id: 'none', label: 'No Glasses', icon: '👤', desc: 'Clear unobstructed anime face' },
+];
+
+export const ANIME_HAIR_COLORS = [
+  { id: 'natural', label: 'Natural Match', color: '#18181b' },
+  { id: 'silver', label: 'Silver White', color: '#e2e8f0' },
+  { id: 'blonde', label: 'Golden Blonde', color: '#facc15' },
+  { id: 'pink', label: 'Sakura Pink', color: '#f472b6' },
+  { id: 'cyan', label: 'Electric Cyan', color: '#38bdf8' },
+  { id: 'crimson', label: 'Fiery Crimson', color: '#ef4444' },
+  { id: 'violet', label: 'Neon Violet', color: '#a855f7' },
+];
+
+export const ANIME_AURAS = [
+  { id: 'none', label: 'No Aura', icon: '⚪' },
+  { id: 'gold', label: 'Super Saiyan Gold', icon: '🔥' },
+  { id: 'blue', label: 'Spirit Blue Flame', icon: '⚡' },
+  { id: 'sakura', label: 'Sakura Petal Storm', icon: '🌸' },
+  { id: 'neon', label: 'Cyber Glitch Grid', icon: '🌐' },
+  { id: 'menacing', label: 'Menacing (ゴゴゴ)', icon: '🟣' },
+  { id: 'sparkles', label: 'Radiant Sparkles', icon: '✨' },
+];
+
+// Sample test photos including the user's tie & glasses avatar from Canva!
+export const SAMPLE_PORTRAITS = [
+  {
+    id: 'sample_canva_pro',
+    label: 'Formal with Tie & Glasses (Reference)',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    promptHint: 'Young professional man with black hair, stylish glasses, collared shirt and striped necktie',
+  },
+  {
+    id: 'sample_student',
+    label: 'Anime Protagonist Girl',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    promptHint: 'Young woman with brown hair, gentle smile, casual aesthetic outfit',
+  },
+  {
+    id: 'sample_urban',
+    label: 'Urban Streetwear',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+    promptHint: 'Young man with stylish haircut, confident smirk, trendy black hoodie',
+  },
+];
+
