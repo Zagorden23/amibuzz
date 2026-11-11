@@ -12,13 +12,30 @@
  * @param {string} [options.caption] Optional caption or Japanese SFX
  * @returns {string} SVG XML string
  */
+const escapeXml = (value) =>
+  String(value ?? '').replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+
 export function generateStickerSvg({
   imgUrl,
   name = 'Anime Sticker',
   borderType = 'white',
   borderWidth = 14,
   caption = '',
+  mode = 'circle',
 }) {
+  name = escapeXml(name);
+  caption = escapeXml(caption);
+  imgUrl = escapeXml(imgUrl);
+
+  if (mode === 'diecut') {
+    // The artwork already carries its contour border and shadow: wrap it as-is.
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <title>${name} - AmiBuzz Anime Sticker</title>
+  <image href="${imgUrl}" x="0" y="0" width="600" height="600" preserveAspectRatio="xMidYMid meet" />
+</svg>`;
+  }
+
   const size = 600;
   const pad = 36;
   const cx = size / 2;
@@ -161,5 +178,5 @@ export function downloadStickerSvg(options) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }

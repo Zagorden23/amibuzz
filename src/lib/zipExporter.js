@@ -1,6 +1,9 @@
 // Pure JavaScript PKZIP (Stored/Method 0) Archive Generator for AmiBuzz
 // Supports 1-Click WhatsApp & Telegram Sticker Pack ZIP exports with zero external dependencies.
 
+import { loadImage } from './stickerFx.js';
+import { canEncodeWebp } from './webpAnimEncoder.js';
+
 // Precomputed CRC32 Table
 const CRC_TABLE = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
@@ -133,51 +136,50 @@ export function createZipBlob(files) {
 }
 
 /**
- * Converts an image dataURL / URL into a 512x512 transparent PNG/WebP Uint8Array.
- * @param {string} src
- * @param {number} size
+ * Renders a sticker into a square canvas (fitted, never stretched, with a
+ * small margin as WhatsApp's guidelines ask) and encodes it.
+ *
+ * @param {string} src image URL or data URL
+ * @param {number} size output edge in px
+ * @param {Object} [options]
+ * @param {'png'|'webp'} [options.format='png']
+ * @param {number} [options.maxBytes] for WebP, lower the quality until it fits
  * @returns {Promise<Uint8Array>}
  */
-export async function rasterizeStickerBytes(src, size = 512) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, size, size);
+export async function rasterizeStickerBytes(src, size = 512, options = {}) {
+  const format = options.format || 'png';
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
 
-      // Fit with padding
-      const pad = size * 0.05;
-      const drawSize = size - pad * 2;
-      ctx.drawImage(img, pad, pad, drawSize, drawSize);
+  try {
+    const img = await loadImage(src);
+    const pad = size * 0.03;
+    const box = size - pad * 2;
+    const scale = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+  } catch {
+    // Leave the square blank rather than failing the whole pack.
+  }
 
-      canvas.toBlob(
-        async (blob) => {
-          if (!blob) {
-            reject(new Error('Canvas blob conversion failed'));
-            return;
-          }
-          const buf = await blob.arrayBuffer();
-          resolve(new Uint8Array(buf));
-        },
-        'image/png'
-      );
-    };
-    img.onerror = () => {
-      // Return 1x1 fallback
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      canvas.toBlob(async (b) => {
-        const buf = await b.arrayBuffer();
-        resolve(new Uint8Array(buf));
-      });
-    };
-    img.src = src;
-  });
+  const encode = (type, quality) =>
+    new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), type, quality));
+
+  if (format === 'webp') {
+    for (const quality of [0.92, 0.8, 0.68, 0.55, 0.42, 0.3]) {
+      const blob = await encode('image/webp', quality);
+      if (!blob || blob.type !== 'image/webp') break; // browser can't encode WebP
+      if (!options.maxBytes || blob.size <= options.maxBytes || quality === 0.3) {
+        return new Uint8Array(await blob.arrayBuffer());
+      }
+    }
+  }
+  const png = await encode('image/png');
+  return new Uint8Array(await png.arrayBuffer());
 }
 
 /**
@@ -197,10 +199,15 @@ export async function downloadWhatsAppStickerPackZip(packName, stickers) {
   const stickerManifestList = [];
   const emojis = ['✨', '💖', '🔥', '🌸', '⚡', '🎉', '🐾', '⭐', '🌟', '💢', '💧', '😎'];
 
-  for (let i = 0; i < stickers.length; i++) {
-    const s = stickers[i];
-    const fileName = `sticker_${String(i + 1).padStart(2, '0')}.png`;
-    const stickerBytes = await rasterizeStickerBytes(s.img, 512);
+  // WhatsApp wants 512x512 WebP stickers of at most 100 KB each.
+  const webp = canEncodeWebp();
+  const ext = webp ? 'webp' : 'png';
+  const list = stickers.slice(0, 30);
+
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    const fileName = `sticker_${String(i + 1).padStart(2, '0')}.${ext}`;
+    const stickerBytes = await rasterizeStickerBytes(s.img, 512, { format: ext, maxBytes: 100 * 1024 });
 
     files.push({
       name: fileName,
@@ -252,16 +259,17 @@ Website: https://amibuzz.onrender.com
 ================================================================
 
 HOW TO USE IN WHATSAPP:
-1. Transfer these .png files or import via the "Sticker Maker" app for WhatsApp
+1. Import these sticker files with a "Sticker Maker" app for WhatsApp
    (Android: Sticker Maker by Viko & Co / iOS: Sticker.ly or Top Stickers).
 2. Use 'tray_icon.png' as the pack tray thumbnail.
 3. Tap "Add to WhatsApp" to chat with your custom stickers!
+   WhatsApp packs need between 3 and 30 stickers.
 
 HOW TO USE IN TELEGRAM:
 1. Open Telegram and search for the official '@Stickers' bot.
 2. Send /newpack, give your pack a name (e.g. "${packName}").
 3. Send 'tray_icon.png' for the pack icon.
-4. Send each sticker image (sticker_01.png, sticker_02.png...) as uncompressed files.
+4. Send each sticker image (sticker_01, sticker_02...) as an uncompressed file.
 5. Send /publish to get your permanent t.me/addstickers link!
 
 Enjoy your elite custom anime stickers!
@@ -283,7 +291,7 @@ Enjoy your elite custom anime stickers!
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 
-  return { success: true, count: stickers.length };
+  return { success: true, count: list.length };
 }

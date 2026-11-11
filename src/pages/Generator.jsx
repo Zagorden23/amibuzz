@@ -30,7 +30,8 @@ import {
 import { Button } from '../components/ui/Button.jsx';
 import { TiltCard } from '../components/ui/TiltCard.jsx';
 import { PlanBadge } from '../components/ui/PlanBadge.jsx';
-import { generateImage, generateStickerBatch, enhancePrompt } from '../services/geminiService.js';
+import { generateStickerBatch, enhancePrompt } from '../services/geminiService.js';
+import { toPngBlob } from '../lib/stickerFx.js';
 import { getUsage } from '../services/usageService.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { planFor } from '../lib/plans.js';
@@ -60,6 +61,11 @@ export const Generator = ({ onNavigate, pageState }) => {
   const [copiedId, setCopiedId] = useState(null);
   const [prompt, setPrompt] = useState(pageState?.remixPrompt || '');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  // Photo engine: 'ai' redraws the photo with Gemini; 'device' cel-shades it
+  // locally (instant, free, works offline).
+  const [photoEngine, setPhotoEngine] = useState('ai');
 
   // Generation Modes: 'single' | 'duo' | 'quad_emotion'
   const [generationMode, setGenerationMode] = useState('single');
@@ -159,10 +165,15 @@ export const Generator = ({ onNavigate, pageState }) => {
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Reference image must be under 5MB.');
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file (PNG, JPG, WebP, HEIC...).');
       return;
     }
+    if (file.size > 25 * 1024 * 1024) {
+      setError('That photo is over 25 MB. Please use a smaller one.');
+      return;
+    }
+    setError('');
     const reader = new FileReader();
     reader.onload = () => {
       setReferenceImage(reader.result);
@@ -194,43 +205,35 @@ export const Generator = ({ onNavigate, pageState }) => {
   const handleGenerate = async () => {
     if (!prompt.trim() && !referenceImage) return;
     setError('');
+    setNotice('');
     setIsGenerating(true);
     playPop();
 
     try {
       const selectedStyle = ANIME_STYLES[activePresetIndex]?.name || 'Kawaii Chibi';
-
       const isQuadEmotion = generationMode === 'quad_emotion';
       const variantCount = generationMode === 'duo' ? 2 : isQuadEmotion ? 4 : 1;
 
-      const results = await generateStickerBatch({
-        prompt,
+      const { stickers, usage: newUsage, notice: info } = await generateStickerBatch({
+        prompt: prompt.trim(),
         stylePreset: selectedStyle,
         referenceImage,
         variantCount,
         emotionMatrix: isQuadEmotion,
         colorHarmony,
+        engine: referenceImage ? photoEngine : 'ai',
       });
 
-      if (results && results.length > 0) {
-        let updatedList = drafts;
-        for (const st of results) {
-          updatedList = saveStickerToStorage(st, user);
-        }
-        setDrafts(updatedList);
-        setLatestBatch(results);
-        setActiveHeroSticker(results[0]);
-
-        // Update quota usage
-        if (results[0]?.used !== undefined) {
-          setUsage({
-            plan: results[0].plan,
-            quota: results[0].quota,
-            used: results[0].used,
-            remaining: results[0].remaining,
-          });
-        }
+      let updatedList = drafts;
+      // Save oldest first so the first variant ends up on top of the library.
+      for (const st of [...stickers].reverse()) {
+        updatedList = saveStickerToStorage(st, user);
       }
+      setDrafts(updatedList);
+      setLatestBatch(stickers);
+      setActiveHeroSticker(stickers[0]);
+      if (newUsage) setUsage(newUsage);
+      if (info) setNotice(info);
 
       playSuccess();
       fireConfetti();
@@ -262,38 +265,36 @@ export const Generator = ({ onNavigate, pageState }) => {
   const handleCopySticker = async (stickerItem, e) => {
     if (e) e.stopPropagation();
     try {
-      const res = await fetch(stickerItem.img);
-      const blob = await res.blob();
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
-        setCopiedId(stickerItem.id);
-        playSuccess();
-        setTimeout(() => setCopiedId(null), 2000);
-      }
+      // Clipboards only accept PNG images, whatever the sticker is stored as.
+      const blob = await toPngBlob(stickerItem.img);
+      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCopiedId(stickerItem.id);
+      playSuccess();
+      setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(stickerItem.img);
-        setCopiedId(stickerItem.id);
-        setTimeout(() => setCopiedId(null), 2000);
-      }
+      setError('Copying images needs clipboard permission in this browser. Use Download instead.');
     }
   };
 
-  const handleDownload = (stickerItem, e) => {
+  const handleDownload = async (stickerItem, e) => {
     if (e) e.stopPropagation();
     setDownloadingId(stickerItem.id);
     try {
+      const blob = await toPngBlob(stickerItem.img);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = stickerItem.img;
-      const safeName = (stickerItem.name || 'sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      link.href = url;
+      const safeName = (stickerItem.name || 'sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       link.download = `${safeName || 'anime-sticker'}.png`;
-      link.target = '_blank';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       playSuccess();
     } catch (err) {
       console.error('Download error:', err);
+      setError('That image could not be downloaded because its host blocks editing. Open it in the customizer first.');
     }
     setTimeout(() => setDownloadingId(null), 2000);
   };
@@ -472,9 +473,32 @@ export const Generator = ({ onNavigate, pageState }) => {
                             className="size-10 rounded-lg object-cover border border-white/20"
                           />
                           <div>
-                            <p className="text-xs font-bold text-white">Image-to-Sticker Reference</p>
-                            <p className="text-[10px] text-slate-400">AI converts this to anime die-cut</p>
+                            <p className="text-xs font-bold text-white">Photo-to-Sticker</p>
+                            <p className="text-[10px] text-slate-400">
+                              {photoEngine === 'ai'
+                                ? 'AI redraws it as anime art, then it is die-cut'
+                                : 'Cel-shaded on your device: instant & free'}
+                            </p>
                           </div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-auto mr-2 p-0.5 rounded-lg bg-black/40 border border-white/10">
+                          {[
+                            { id: 'ai', label: 'AI redraw' },
+                            { id: 'device', label: 'Instant' },
+                          ].map((opt) => (
+                            <button
+                              key={opt.id}
+                              onClick={() => {
+                                playPop();
+                                setPhotoEngine(opt.id);
+                              }}
+                              className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${
+                                photoEngine === opt.id ? 'bg-red-500 text-white' : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
                         </div>
                         <button
                           onClick={handleClearReferenceImage}
@@ -487,7 +511,11 @@ export const Generator = ({ onNavigate, pageState }) => {
 
                     <textarea
                       className="w-full p-3.5 bg-transparent border-none focus:ring-0 text-white placeholder:text-slate-500 resize-none min-h-[110px] text-xs lg:text-sm outline-none"
-                      placeholder="Describe your anime sticker... (e.g. 'Chibi cat samurai eating ramen with chopsticks, pastel colors, white border')"
+                      placeholder={
+                        referenceImage
+                          ? 'Optional: extra direction for your photo sticker (e.g. "wearing a samurai kimono, holding ramen")'
+                          : "Describe your anime sticker... (e.g. 'Chibi cat samurai eating ramen with chopsticks')"
+                      }
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                     ></textarea>
@@ -552,11 +580,28 @@ export const Generator = ({ onNavigate, pageState }) => {
                         onClick={handleGenerate}
                         disabled={isGenerating || (!prompt.trim() && !referenceImage)}
                       >
-                        {isGenerating ? 'Synthesizing...' : 'Generate'}{' '}
+                        {isGenerating
+                          ? referenceImage && photoEngine === 'device'
+                            ? 'Styling...'
+                            : 'Generating...'
+                          : referenceImage && photoEngine === 'device'
+                          ? 'Make sticker'
+                          : 'Generate'}{' '}
                         <Zap size={15} fill="currentColor" />
                       </Button>
                     </div>
                   </div>
+
+                  {/* Info notice (on-device fallback, partial batches) */}
+                  {notice && !error && (
+                    <div className="flex items-start gap-2 text-xs rounded-xl p-3 border bg-yellow-500/10 border-yellow-500/20 text-yellow-200">
+                      <Sparkles size={15} className="shrink-0 mt-0.5" />
+                      <span className="flex-1">{notice}</span>
+                      <button onClick={() => setNotice('')} className="text-yellow-300/70 hover:text-yellow-200" aria-label="Dismiss">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Error Alert */}
                   {error && (
@@ -761,6 +806,11 @@ export const Generator = ({ onNavigate, pageState }) => {
                       <span className="text-[10px] uppercase font-black tracking-wider text-red-400 bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-500/20">
                         {activeHeroSticker.stylePreset || 'Anime'}
                       </span>
+                      {activeHeroSticker.source === 'device' && (
+                        <span className="text-[10px] font-bold text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                          On-device
+                        </span>
+                      )}
                       {activeHeroSticker.emotionLabel && (
                         <span className="text-[10px] font-bold text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
                           {activeHeroSticker.emotionIcon} {activeHeroSticker.emotionLabel}
@@ -994,9 +1044,9 @@ export const Generator = ({ onNavigate, pageState }) => {
                   <div className="size-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mb-4">
                     <Sparkles size={32} className="animate-spin" />
                   </div>
-                  <h4 className="text-white font-bold text-base mb-1">Synthesizing Anime Sticker...</h4>
-                  <p className="text-xs text-slate-400 max-w-[200px]">
-                    Isolating character contours, applying cel shading & die-cut borders
+                  <h4 className="text-white font-bold text-base mb-1">Creating your sticker...</h4>
+                  <p className="text-xs text-slate-400 max-w-[220px]">
+                    Drawing the art, cutting out the background and adding the die-cut border
                   </p>
                 </div>
               )}

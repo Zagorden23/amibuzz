@@ -17,6 +17,7 @@ import { Button } from '../ui/Button.jsx';
 import { playPop, playSuccess } from '../../lib/audio.js';
 import { fireConfetti } from '../../lib/confetti.js';
 import { downloadStickerSvg } from '../../lib/vectorSvgExporter.js';
+import { extractSubject, renderDieCut, createCanvas, canvasToStickerDataUrl, downscale, toPngBlob } from '../../lib/stickerFx.js';
 
 export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnimate }) => {
   const canvasRef = useRef(null);
@@ -24,7 +25,9 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
   // Customizer Controls State
   const [borderEnabled, setBorderEnabled] = useState(true);
   const [borderWidth, setBorderWidth] = useState(14);
-  const [borderGlow, setBorderGlow] = useState('shadow'); // 'shadow' | 'holo' | 'cyan' | 'pink' | 'gold' | 'dashed'
+  const [borderGlow, setBorderGlow] = useState('white'); // key of BORDER_STYLES
+  const [shape, setShape] = useState('contour'); // 'contour' | 'circle' | 'rounded'
+  const [subjectState, setSubjectState] = useState({ key: '', canvas: null, cut: '', error: '' });
 
   const [textEnabled, setTextEnabled] = useState(false);
   const [textContent, setTextContent] = useState('SUGOI!');
@@ -53,13 +56,35 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     'GG EZ',
   ];
 
-  // Redraw canvas whenever settings change
+  // Cut the artwork out once per sticker + shape; borders are redrawn live.
+  useEffect(() => {
+    if (!open || !sticker) return undefined;
+    let cancelled = false;
+    const key = `${sticker.id}|${sticker.img?.length}|${shape}`;
+    (async () => {
+      try {
+        // Stickers made by the studio carry a border-less cut-out; older ones
+        // are cut out of their image here.
+        const src = shape === 'contour' && sticker.cutout ? sticker.cutout : sticker.img;
+        const { subject, cut } = await extractSubject(src, { cut: shape === 'contour' ? 'auto' : shape, workSize: 768 });
+        if (!cancelled) setSubjectState({ key, canvas: subject, cut, error: '' });
+      } catch (err) {
+        if (!cancelled) setSubjectState({ key, canvas: null, cut: '', error: err?.message || 'Could not load this sticker.' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sticker, shape]);
+
+  // Redraw whenever a setting changes.
   useEffect(() => {
     if (!open || !sticker) return;
     drawStickerCanvas();
   }, [
     open,
     sticker,
+    subjectState,
     borderEnabled,
     borderWidth,
     borderGlow,
@@ -73,105 +98,45 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     saturation,
   ]);
 
-  const drawStickerCanvas = async () => {
+  const drawStickerCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas || !sticker?.img) return;
-    const ctx = canvas.getContext('2d');
+    const subject = subjectState.canvas;
+    if (!canvas || !subject) return;
     const size = 600;
     canvas.width = size;
     canvas.height = size;
-
+    const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, size, size);
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // Colour adjustments are baked into the artwork before the border is
+    // built, so the border itself stays clean.
+    let art = subject;
+    if (brightness !== 100 || contrast !== 100 || saturation !== 100) {
+      art = createCanvas(subject.width, subject.height);
+      const actx = art.getContext('2d');
+      actx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+      actx.drawImage(subject, 0, 0);
+    }
 
-    await new Promise((resolve) => {
-      img.onload = resolve;
-      img.onerror = () => {
-        const fallback = new Image();
-        fallback.onload = resolve;
-        fallback.onerror = resolve;
-        fallback.src = sticker.img;
-      };
-      img.src = sticker.img;
+    const scaledBorder = Math.round(borderWidth * (size / 512));
+    const dieCut = renderDieCut(art, {
+      size,
+      borderWidth: borderEnabled ? scaledBorder : 0,
+      borderStyle: borderGlow,
+      shadow: borderEnabled,
     });
+    ctx.drawImage(dieCut, 0, 0);
 
-    const pad = borderWidth + 30;
-    const drawSize = size - pad * 2;
     const cx = size / 2;
     const cy = size / 2;
-    const radius = drawSize / 2;
+    const radius = size * 0.4;
 
-    // Apply Glow / Drop Shadow for die-cut border
-    ctx.save();
-    if (borderEnabled) {
-      if (borderGlow === 'shadow') {
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-        ctx.shadowBlur = 18;
-        ctx.shadowOffsetY = 10;
-      } else if (borderGlow === 'cyan') {
-        ctx.shadowColor = 'rgba(6, 182, 212, 0.85)';
-        ctx.shadowBlur = 24;
-      } else if (borderGlow === 'pink') {
-        ctx.shadowColor = 'rgba(236, 72, 153, 0.85)';
-        ctx.shadowBlur = 24;
-      } else if (borderGlow === 'gold') {
-        ctx.shadowColor = 'rgba(234, 179, 8, 0.85)';
-        ctx.shadowBlur = 24;
-      } else if (borderGlow === 'holo') {
-        ctx.shadowColor = 'rgba(168, 85, 247, 0.6)';
-        ctx.shadowBlur = 22;
-      }
-
-      // Contour fill
-      if (borderGlow === 'holo') {
-        // Holographic multi-stop linear gradient
-        const holoGrad = ctx.createLinearGradient(0, 0, size, size);
-        holoGrad.addColorStop(0, '#ff0080');
-        holoGrad.addColorStop(0.25, '#7928ca');
-        holoGrad.addColorStop(0.5, '#0070f3');
-        holoGrad.addColorStop(0.75, '#00dfd8');
-        holoGrad.addColorStop(1, '#ff0080');
-        ctx.fillStyle = holoGrad;
-      } else {
-        ctx.fillStyle = '#ffffff';
-      }
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius + borderWidth, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Dashed contour line if selected
-      if (borderGlow === 'dashed') {
-        ctx.save();
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 6]);
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius + borderWidth + 4, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-    ctx.restore();
-
-    // Draw main image inside circular clip with color adjustments
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.clip();
-
-    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-    ctx.drawImage(img, cx - radius, cy - radius, radius * 2, radius * 2);
-    ctx.restore();
-
-    // Decal overlays (Anime expressions)
+    // Decal overlays (anime expressions)
     ctx.save();
     if (decal === 'sparkles') {
       drawDecalText(ctx, '✨', cx + radius * 0.65, cy - radius * 0.65, 42);
-      drawDecalText(ctx, '✦', cx - radius * 0.7, cy - radius * 0.4, 32);
-      drawDecalText(ctx, '★', cx + radius * 0.6, cy + radius * 0.5, 30);
+      drawDecalText(ctx, '✦', cx - radius * 0.7, cy - radius * 0.4, 32, '#fde047');
+      drawDecalText(ctx, '★', cx + radius * 0.6, cy + radius * 0.5, 30, '#f472b6');
     } else if (decal === 'anger') {
       drawDecalText(ctx, '💢', cx + radius * 0.6, cy - radius * 0.6, 48);
     } else if (decal === 'sweat') {
@@ -190,17 +155,16 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     }
     ctx.restore();
 
-    // Text banner / Ribbon caption
+    // Text ribbon
     if (textEnabled && textContent.trim()) {
       ctx.save();
       const bannerHeight = 52;
-      let by = cy + radius * 0.72;
+      let by = cy + radius * 0.85;
       let bx = cx;
-
-      if (textPosition === 'top') by = cy - radius * 0.72;
+      if (textPosition === 'top') by = cy - radius * 0.85;
       if (textPosition === 'badge') {
         bx = cx + radius * 0.5;
-        by = cy - radius * 0.5;
+        by = cy - radius * 0.62;
       }
 
       const styles = {
@@ -211,31 +175,30 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
       };
       const curStyle = styles[textStyle] || styles.red;
 
-      ctx.font = '900 24px system-ui, -apple-system, sans-serif';
+      let fontSize = 26;
+      ctx.font = `900 ${fontSize}px system-ui, -apple-system, sans-serif`;
+      while (ctx.measureText(textContent).width > size * 0.78 && fontSize > 12) {
+        fontSize -= 1;
+        ctx.font = `900 ${fontSize}px system-ui, -apple-system, sans-serif`;
+      }
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      const bannerWidth = Math.max(140, ctx.measureText(textContent).width + 48);
+      bx = Math.min(size - bannerWidth / 2 - 8, Math.max(bannerWidth / 2 + 8, bx));
 
-      const metrics = ctx.measureText(textContent);
-      const bannerWidth = Math.max(140, metrics.width + 48);
-
-      // Banner shadow
       ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
       ctx.shadowBlur = 12;
       ctx.shadowOffsetY = 6;
-
-      // Rounded banner rect
       ctx.fillStyle = curStyle.bg;
       ctx.strokeStyle = curStyle.border;
       ctx.lineWidth = 4;
-
       roundRect(ctx, bx - bannerWidth / 2, by - bannerHeight / 2, bannerWidth, bannerHeight, 26);
       ctx.fill();
       ctx.stroke();
 
-      // Banner text
       ctx.shadowColor = 'transparent';
       ctx.fillStyle = curStyle.text;
-      ctx.fillText(textContent, bx, by);
+      ctx.fillText(textContent, bx, by + 1);
       ctx.restore();
     }
   };
@@ -276,7 +239,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     const canvas = canvasRef.current;
     if (!canvas) return;
     try {
-      const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+      const blob = await toPngBlob(canvas);
       if (blob && navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
         setCopied(true);
@@ -289,29 +252,40 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
   };
 
   // Download Transparent PNG
-  const handleDownloadPng = () => {
+  const handleDownloadPng = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     playPop();
+    const blob = await toPngBlob(canvas);
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = canvas.toDataURL('image/png');
-    const safeName = (sticker?.name || 'custom-sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    link.download = `${safeName}-diecut.png`;
+    link.href = url;
+    const safeName = (sticker?.name || 'custom-sticker').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    link.download = `${safeName || 'custom-sticker'}-diecut.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     playSuccess();
   };
 
+  // Escape closes the customizer.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === 'Escape' && onClose?.();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   // Download Scalable Vector SVG (Recraft style)
   const handleDownloadSvg = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     playPop();
     downloadStickerSvg({
-      imgUrl: sticker?.img,
+      imgUrl: canvas.toDataURL('image/png'),
       name: sticker?.name,
-      borderType: borderGlow === 'holo' ? 'holo' : borderGlow === 'cyan' ? 'neon' : borderGlow === 'dashed' ? 'dashed' : 'white',
-      borderWidth,
-      caption: textEnabled ? textContent : '',
+      mode: 'diecut',
     });
     playSuccess();
   };
@@ -321,10 +295,15 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
     const canvas = canvasRef.current;
     if (!canvas) return;
     playPop();
-    const updatedImg = canvas.toDataURL('image/png');
     const updatedSticker = {
       ...sticker,
-      img: updatedImg,
+      img: canvasToStickerDataUrl(canvas),
+      // Keep the clean artwork so the sticker can be re-bordered later.
+      cutout:
+        sticker.cutout ||
+        (subjectState.cut === 'contour' && subjectState.canvas
+          ? canvasToStickerDataUrl(downscale(subjectState.canvas, 512), 0.9)
+          : null),
       customized: true,
       lastModified: Date.now(),
     };
@@ -416,6 +395,40 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
               <h3 className="text-base font-black text-white">Sticker Studio Customizer</h3>
             </div>
 
+            {/* 0. Cut shape */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Cut Shape</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'contour', label: 'Follow outline' },
+                  { id: 'circle', label: 'Circle' },
+                  { id: 'rounded', label: 'Rounded card' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => {
+                      playPop();
+                      setShape(opt.id);
+                    }}
+                    className={`text-[11px] font-bold py-2 rounded-lg border transition-all ${
+                      shape === opt.id
+                        ? 'bg-red-500/20 border-red-500 text-white'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {shape === 'contour' && subjectState.canvas && subjectState.cut !== 'contour' && (
+                <p className="text-[10px] text-yellow-300">
+                  This image has a busy background, so it was cut as a rounded card. Generate on a plain background
+                  for an outline cut.
+                </p>
+              )}
+              {subjectState.error && <p className="text-[10px] text-red-300">{subjectState.error}</p>}
+            </div>
+
             {/* 1. Die-Cut Contour Border */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
@@ -444,7 +457,7 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                   <input
                     type="range"
                     min="4"
-                    max="30"
+                    max="36"
                     value={borderWidth}
                     onChange={(e) => setBorderWidth(Number(e.target.value))}
                     className="w-full accent-red-500 cursor-pointer"
@@ -455,12 +468,12 @@ export const StickerCustomizerModal = ({ open, onClose, sticker, onSave, onAnima
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Contour Finish</span>
                     <div className="grid grid-cols-3 gap-1.5">
                       {[
-                        { id: 'shadow', label: 'Classic White' },
+                        { id: 'white', label: 'Classic White' },
                         { id: 'holo', label: 'Holo Rainbow' },
                         { id: 'cyan', label: 'Cyber Neon' },
                         { id: 'pink', label: 'Kawaii Pink' },
                         { id: 'gold', label: 'Gold Aura' },
-                        { id: 'dashed', label: 'Dashed Cut' },
+                        { id: 'black', label: 'Ink Black' },
                       ].map((preset) => (
                         <button
                           key={preset.id}

@@ -143,6 +143,31 @@ npx firebase deploy --only hosting
 
 ---
 
+## Sticker Maker & GIF Lab
+
+**Sticker Studio** (`src/pages/Generator.jsx`)
+- *AI* — `generateStickerBatch` (1, 2 or 4 variants, or the 4-expression emotion matrix) draws the art with Gemini on a plain white background. Each image costs one generation, and failed images are refunded. Photo uploads go to the Gemini image model, which redraws the person or pet as anime.
+- *Die-cut* — the browser cuts the art out of its background and adds a border that follows the outline (`src/lib/stickerFx.js`). The border-less cut-out is stored with the sticker so the customizer can re-border it.
+- *Instant* — a photo can also be cel-shaded on-device in any of the 8 styles, with no AI and no quota. This also runs automatically when the AI backend can't be reached. Text-only prompts need the AI.
+
+**GIF Lab** (`src/pages/GifLab.jsx`). Everything runs in the browser.
+- Input: any image, animated GIF, animated WebP/APNG (where the browser supports `ImageDecoder`), any video the browser can play, several images as a slideshow, or a paste from the clipboard.
+- Edit: 18 motion presets for stills; trim, speed, reverse and boomerang for clips; anime style filters; captions; colour adjustments; background.
+- Output: animated GIF, WhatsApp animated WebP (512 px, ≤ 500 KB), Discord emoji (128 px, ≤ 256 KB), animated WebP, or a ZIP of PNG frames. Size-capped targets step quality down until the file fits.
+
+| Module | What it does |
+| --- | --- |
+| `src/lib/gifEncoder.js` | GIF89a encoder: median-cut + k-means palette, dithering, transparency, frame-difference compression |
+| `src/lib/gifDecoder.js` | GIF decoder with disposal, interlace and transparency support |
+| `src/lib/webpAnimEncoder.js` | Animated WebP muxer (RIFF / VP8X / ANIM / ANMF) |
+| `src/lib/mediaFrames.js` | Image / GIF / video → frames |
+| `src/lib/motionPresets.js` | Motion presets, captions, clip timing |
+| `src/lib/stickerFx.js` | Background removal, toon filters, contour die-cut |
+
+Optional server env vars: `GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`), `IMAGEN_MODEL` (default `imagen-4.0-generate-001`), `GEMINI_TEXT_MODEL` (default `gemini-2.5-flash`).
+
+---
+
 ## Security & Architecture Principles
 
 - **Zero Secret Leakage**: The Gemini AI key, Razorpay secret, Stripe secret, and OTP generation keys are restricted exclusively to Cloud Functions. Only public `VITE_` variables are bundled into client assets.

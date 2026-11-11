@@ -14,6 +14,7 @@ exports.consumeGeneration = require('./src/usage/consumeGeneration').consumeGene
 exports.getUsage = require('./src/usage/consumeGeneration').getUsage;
 
 exports.generateSticker = require('./src/generation/generateSticker').generateSticker;
+exports.generateStickerBatch = require('./src/generation/generateSticker').generateStickerBatch;
 exports.enhancePrompt = require('./src/generation/generateSticker').enhancePrompt;
 
 exports.createRazorpayOrder = require('./src/payments/createRazorpayOrder').createRazorpayOrder;

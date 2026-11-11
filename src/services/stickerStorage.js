@@ -125,32 +125,56 @@ export function saveStickerToStorage(sticker, user = null) {
     isFavorite: Boolean(sticker.isFavorite),
   };
 
-  const updated = [normalized, ...current.filter((s) => s.id !== normalized.id)];
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch (err) {
-    console.warn('LocalStorage quota exceeded for stickers:', err);
-  }
+  const updated = persistStickers([normalized, ...current.filter((s) => s.id !== normalized.id)]);
 
-  // Sync to Firestore if authenticated
-  if (user?.uid && db) {
+  // Sync to Firestore if authenticated (documents are capped at 1 MiB).
+  if (canSync(user)) {
     try {
+      const record = JSON.stringify(normalized).length > 900_000 ? { ...normalized, cutout: null } : normalized;
       const stickerRef = doc(db, 'users', user.uid, 'stickers', String(normalized.id));
-      setDoc(stickerRef, normalized, { merge: true }).catch(() => {});
+      setDoc(stickerRef, record, { merge: true }).catch(() => {});
     } catch {}
   }
 
   return updated;
 }
 
+// Local creator sessions (demo / fallback OAuth) have no Firestore access.
+const canSync = (user) => Boolean(user?.uid && db && !/^(demo|google|ms|apple|email|sms)-/.test(user.uid));
+
+/**
+ * Writes the sticker list, making room when the browser's storage is full:
+ * first the re-editable cut-outs of the oldest stickers are dropped, then the
+ * oldest stickers themselves. The newest sticker is always kept.
+ * @returns {Array} the list that was actually stored
+ */
+function persistStickers(list) {
+  let working = list.slice();
+  for (let attempt = 0; attempt < 200; attempt++) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(working));
+      return working;
+    } catch (err) {
+      const withCutout = working.map((s, i) => (s.cutout ? i : -1)).filter((i) => i > 0);
+      if (withCutout.length) {
+        const i = withCutout[withCutout.length - 1];
+        working[i] = { ...working[i], cutout: null };
+      } else if (working.length > 1) {
+        working = working.slice(0, -1);
+      } else {
+        console.warn('Sticker could not be saved locally:', err);
+        return working;
+      }
+    }
+  }
+  return working;
+}
+
 export function updateStickerInStorage(id, updates, user = null) {
   const current = getStoredStickers();
-  const updated = current.map((s) => (s.id === id ? { ...s, ...updates } : s));
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch {}
+  const updated = persistStickers(current.map((s) => (s.id === id ? { ...s, ...updates } : s)));
 
-  if (user?.uid && db) {
+  if (canSync(user)) {
     try {
       const stickerRef = doc(db, 'users', user.uid, 'stickers', String(id));
       updateDoc(stickerRef, updates).catch(() => {});
@@ -162,12 +186,9 @@ export function updateStickerInStorage(id, updates, user = null) {
 
 export function deleteStickerFromStorage(id, user = null) {
   const current = getStoredStickers();
-  const updated = current.filter((s) => s.id !== id);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch {}
+  const updated = persistStickers(current.filter((s) => s.id !== id));
 
-  if (user?.uid && db) {
+  if (canSync(user)) {
     try {
       const stickerRef = doc(db, 'users', user.uid, 'stickers', String(id));
       deleteDoc(stickerRef).catch(() => {});
@@ -289,35 +310,15 @@ export async function createPrintableStickerSheet(stickers, title = 'AmiBuzz Ani
         img.src = s.img;
       });
 
-      // Draw dashed cut contour circle/rounded box
-      ctx.save();
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([8, 8]);
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, boxSize / 2 + 10, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      // Draw sticker with white die-cut shadow
+      // Die-cut stickers already carry their cut border; just fit them in.
+      const scale = Math.min(boxSize / img.naturalWidth, boxSize / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.15)';
-      ctx.shadowBlur = 15;
-      ctx.shadowOffsetY = 8;
-
-      // Draw white circular backing
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, boxSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Clip image into circle
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, boxSize / 2 - 6, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(img, centerX - boxSize / 2, centerY - boxSize / 2, boxSize, boxSize);
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 6;
+      ctx.drawImage(img, centerX - w / 2, centerY - h / 2, w, h);
       ctx.restore();
 
       // Label below
